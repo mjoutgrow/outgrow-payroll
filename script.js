@@ -40,6 +40,16 @@ onpaste="handlePaste(event,this)">
 </div>
 
 <div>
+<label>Late</label>
+<input
+type="number"
+class="rowLate"
+min="0"
+value="0"
+placeholder="Minutes">
+</div>
+
+<div>
 <label>Break</label>
 <input
 type="number"
@@ -54,16 +64,6 @@ placeholder="Minutes">
 <input
 type="number"
 class="rowMia"
-min="0"
-value="0"
-placeholder="Minutes">
-</div>
-
-<div>
-<label>Late</label>
-<input
-type="number"
-class="rowLate"
 min="0"
 value="0"
 placeholder="Minutes">
@@ -1016,9 +1016,9 @@ function render(){
         <td>${d.name}</td>
         <td>${d.date}</td>
         <td>${formatDuration(d.minutes)}</td>
+        <td>${d.late} min</td>
         <td>${d.break} min</td>
         <td>${d.mia} min</td>
-        <td>${d.late} min</td>
         <td>₱${d.salary}</td>
         <td>$${d.dollar}</td>
         <td>
@@ -1044,18 +1044,18 @@ function render(){
         name:d.name,
         cutoff:getCutoff(d.date),
         minutes:0,
+        late:0,
         break:0,
         mia:0,
-        late:0,
         salary:0,
         dollar:0
       };
     }
 
     weekly[wk].minutes += +(d.minutes || 0);
+    weekly[wk].late += +(d.late || 0);
     weekly[wk].break += +(d.break || 0);
     weekly[wk].mia += +(d.mia || 0);
-    weekly[wk].late += +(d.late || 0);
     weekly[wk].salary += +(d.salary || 0);
     weekly[wk].dollar += +(d.dollar || 0);
 
@@ -1066,18 +1066,18 @@ function render(){
         name:d.name,
         month:d.date.slice(0,7),
         minutes:0,
+        late:0,
         break:0,
         mia:0,
-        late:0,
         salary:0,
         dollar:0
       };
     }
 
     monthly[mk].minutes += +(d.minutes || 0);
+    monthly[mk].late += +(d.late || 0);
     monthly[mk].break += +(d.break || 0);
     monthly[mk].mia += +(d.mia || 0);
-    monthly[mk].late += +(d.late || 0);
     monthly[mk].salary += +(d.salary || 0);
     monthly[mk].dollar += +(d.dollar || 0);
 
@@ -1092,9 +1092,9 @@ function render(){
         <td>${w.name}</td>
         <td>${w.cutoff}</td>
         <td>${formatDuration(w.minutes)}</td>
+        <td>${w.late} min</td>
         <td>${w.break} min</td>
         <td>${w.mia} min</td>
-        <td>${w.late} min</td>
         <td>₱${w.salary.toFixed(2)}</td>
         <td>$${w.dollar.toFixed(2)}</td>
         <td>
@@ -1115,9 +1115,9 @@ function render(){
         <td>${m.name}</td>
         <td>${m.month}</td>
         <td>${formatDuration(m.minutes)}</td>
+        <td>${m.late} min</td>
         <td>${m.break} min</td>
         <td>${m.mia} min</td>
-        <td>${m.late} min</td>
         <td>₱${m.salary.toFixed(2)}</td>
         <td>$${m.dollar.toFixed(2)}</td>
       </tr>

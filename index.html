@@ -109,9 +109,9 @@ onblur="autoFormatTime(this)" onpaste="handlePaste(event,this)">
 
 <input type="text" id="editTimeOut" placeholder="Time Out"
 onblur="autoFormatTime(this)" onpaste="handlePaste(event,this)">
+<input type="number" id="editLate" step="1" min="0" placeholder="Late (minutes)">
 <input type="number" id="editBreak" step="1" min="0" placeholder="Break (minutes)">
 <input type="number" id="editMia" step="1" min="0" placeholder="MIA (minutes)">
-<input type="number" id="editLate" step="1" min="0" placeholder="Late (minutes)">
 <button onclick="saveEdit()">Save</button>
 <button onclick="closeEditModal()">Cancel</button>
 </div></div>

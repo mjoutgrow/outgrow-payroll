@@ -229,12 +229,12 @@ timeOut:normalizeTimeInput(out24)
 });
 
 saveAll();
-render();
+
 closeAddModal();
 
-// Refresh the entire page after saving
-window.location.reload();
-
+setTimeout(() => {
+    window.location.reload();
+}, 100);
 }
 
 function closeAddModal(){
@@ -444,81 +444,35 @@ function normalizeTimeInput(value){
 function openAddModal(){
 
   if(employees.length === 0){
-    alert("Please add employee first");
+    alert("Please add employee first.");
     return;
   }
 
-  employeeSelect.innerHTML = `<option value="">-- Select Employee --</option>`;
+  // Load employee dropdown
+  employeeSelect.innerHTML =
+    '<option value="">-- Select Employee --</option>';
 
-  employees.forEach(e => {
+  employees.forEach(emp => {
     employeeSelect.innerHTML += `
-      <option value="${e.name}">${e.name}</option>
+      <option value="${emp.name}">
+        ${emp.name}
+      </option>
     `;
   });
+
+  // Always reset the multiple-record form
+  recordContainer.innerHTML = "";
+
+  // Always create exactly 5 rows
+  for(let i = 0; i < 5; i++){
+    addRecordRow();
+  }
 
   addModal.style.display = "flex";
 
   setTimeout(() => {
     employeeSelect.focus();
   }, 100);
-}
-
-function closeAddModal(){addModal.style.display="none";}
-
-function add(){
-  let emp = employees.find(e => e.name === employeeSelect.value);
-
-  let breakMinutes = Math.floor(+addBreak.value || 0);
-  let miaMinutes = Math.floor(+addMia.value || 0);
-  let lateMinutes = Math.floor(+addLate.value || 0);
-
-  let timeIn24 = convertTo24Hour(timeIn.value);
-  let timeOut24 = convertTo24Hour(timeOut.value);
-
-  let rawMinutes = calcMinutes(date.value, timeIn24, timeOut24, breakMinutes / 60);
-
-  let finalMinutes = rawMinutes - miaMinutes - lateMinutes;
-
-  if(!employeeSelect.value){
-  alert("Please select employee");
-  return;
-}
-
-  if(finalMinutes < 0) finalMinutes = 0;
-
-  let finalHours = finalMinutes / 60;
-
-  let salary = finalHours * emp.rate;
-  let dollar = finalHours * emp.dollarRate;
-
-data.unshift({
-  name: emp.name,
-  date: date.value,
-  hours: finalMinutes / 60,
-  minutes: finalMinutes,
-  break: breakMinutes,
-  mia: miaMinutes,
-  late: lateMinutes,
-  salary: salary.toFixed(2),
-  dollar: dollar.toFixed(2),
-timeIn: normalizeTimeInput(convertTo24Hour(timeIn.value)),
-timeOut: normalizeTimeInput(convertTo24Hour(timeOut.value))
-});
-
-saveAll();
-render();
-
-timeIn.value = "";
-timeOut.value = "";
-addBreak.value = "";
-addMia.value = "";
-addLate.value = "";
-
-setTimeout(() => {
-  timeIn.focus();
-}, 100);
-
-closeAddModal();
 }
 
 function convertTo24Hour(t){

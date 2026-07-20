@@ -229,12 +229,12 @@ timeOut:normalizeTimeInput(out24)
 });
 
 saveAll();
-
+render();
 closeAddModal();
 
-setTimeout(() => {
-    window.location.reload();
-}, 100);
+// Refresh the entire page after saving
+window.location.reload();
+
 }
 
 function closeAddModal(){

@@ -230,10 +230,11 @@ timeOut:normalizeTimeInput(out24)
 
 saveAll();
 
-render();
-
 closeAddModal();
 
+setTimeout(() => {
+    window.location.reload();
+}, 100);
 }
 
 function closeAddModal(){

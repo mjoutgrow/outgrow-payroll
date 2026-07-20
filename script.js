@@ -448,7 +448,7 @@ function openAddModal(){
     return;
   }
 
-  // Employee dropdown
+  // Load employee dropdown
   employeeSelect.innerHTML =
     '<option value="">-- Select Employee --</option>';
 
@@ -460,50 +460,12 @@ function openAddModal(){
     `;
   });
 
-  // Clear previous rows
+  // Always reset the multiple-record form
   recordContainer.innerHTML = "";
 
-  // Get current work week's Monday
-  const today = new Date();
-
-  // Prevent timezone issues by working with local date
-  const monday = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate()
-  );
-
-  const day = monday.getDay();
-
-  // Sunday = 0, Monday = 1...
-  const diffToMonday = day === 0 ? -6 : 1 - day;
-
-  monday.setDate(monday.getDate() + diffToMonday);
-
-  // Automatically create Monday → Sunday
+  // Always create exactly 5 rows
   for(let i = 0; i < 7; i++){
-
-    const workDate = new Date(monday);
-
-    workDate.setDate(
-      monday.getDate() + i
-    );
-
-    // YYYY-MM-DD for <input type="date">
-    const year = workDate.getFullYear();
-
-    const month = String(
-      workDate.getMonth() + 1
-    ).padStart(2, "0");
-
-    const date = String(
-      workDate.getDate()
-    ).padStart(2, "0");
-
-    const formattedDate =
-      `${year}-${month}-${date}`;
-
-    addRecordRow(formattedDate);
+    addRecordRow();
   }
 
   addModal.style.display = "flex";
@@ -513,26 +475,23 @@ function openAddModal(){
   }, 100);
 }
 
+function convertTo24Hour(t){
+  t = t.trim().toUpperCase();
 
-function addRecordRow(autoDate = ""){
+  let match = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
 
-  recordContainer.insertAdjacentHTML(
-    "beforeend",
-    recordRowHTML()
-  );
+  if(match){
+    let h = parseInt(match[1]);
+    let m = match[2];
+    let ap = match[3];
 
-  // Get the newly created row
-  const rows =
-    recordContainer.querySelectorAll(".recordRow");
+    if(ap === "PM" && h !== 12) h += 12;
+    if(ap === "AM" && h === 12) h = 0;
 
-  const newRow =
-    rows[rows.length - 1];
-
-  // Automatically assign date
-  if(autoDate){
-    newRow.querySelector(".rowDate").value =
-      autoDate;
+    return `${h.toString().padStart(2,'0')}:${m}`;
   }
+
+  return t;
 }
 
 /* ================= EDIT ================= */

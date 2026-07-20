@@ -40,33 +40,30 @@ onpaste="handlePaste(event,this)">
 </div>
 
 <div>
-<label>Late</label>
-<input
-type="number"
-class="rowLate"
-min="0"
-value="0"
-placeholder="Minutes">
+  <label>Late</label>
+  <input
+    type="number"
+    class="rowLate"
+    min="0"
+    placeholder="0">
 </div>
 
 <div>
-<label>Break</label>
-<input
-type="number"
-class="rowBreak"
-min="0"
-value="0"
-placeholder="Minutes">
+  <label>Break</label>
+  <input
+    type="number"
+    class="rowBreak"
+    min="0"
+    placeholder="0">
 </div>
 
 <div>
-<label>MIA</label>
-<input
-type="number"
-class="rowMia"
-min="0"
-value="0"
-placeholder="Minutes">
+  <label>MIA</label>
+  <input
+    type="number"
+    class="rowMia"
+    min="0"
+    placeholder="0">
 </div>
 
 </div>
@@ -89,33 +86,6 @@ onclick="this.closest('.recordRow').remove()">
 
 }
 
-function openAddModal(){
-
-if(employees.length===0){
-alert("Please add employee first.");
-return;
-}
-
-employeeSelect.innerHTML='<option value="">-- Select Employee --</option>';
-
-employees.forEach(emp=>{
-
-employeeSelect.innerHTML+=`
-<option value="${emp.name}">
-${emp.name}
-</option>
-`;
-
-});
-
-recordContainer.innerHTML="";
-
-addRecordRow();
-
-addModal.style.display="flex";
-
-}
-
 function addRecordRow(){
 
 recordContainer.insertAdjacentHTML(
@@ -127,114 +97,95 @@ recordRowHTML()
 
 function addMultipleRecords(){
 
-if(!employeeSelect.value){
+  if(!employeeSelect.value){
+    alert("Please select employee.");
+    employeeSelect.focus();
+    return;
+  }
 
-alert("Please select employee.");
-return;
+  const emp = employees.find(e => e.name === employeeSelect.value);
 
-}
+  if(!emp){
+    alert("Selected employee was not found.");
+    return;
+  }
 
-const emp=employees.find(
-e=>e.name===employeeSelect.value
-);
+  const rows = [...document.querySelectorAll(".recordRow")];
 
-const rows=document.querySelectorAll(".recordRow");
+  if(rows.length === 0){
+    alert("Please add at least one row.");
+    return;
+  }
 
-if(rows.length===0){
+  let added = 0;
+  let invalidRow = null;
 
-alert("Please add at least one row.");
-return;
+  for(const row of rows){
+    const date = row.querySelector(".rowDate").value.trim();
+    const timeInRaw = row.querySelector(".rowTimeIn").value.trim();
+    const timeOutRaw = row.querySelector(".rowTimeOut").value.trim();
 
-}
+    // Completely blank rows are allowed and ignored.
+    if(!date && !timeInRaw && !timeOutRaw) continue;
 
-rows.forEach(row=>{
+    if(!date || !timeInRaw || !timeOutRaw){
+      invalidRow = row;
+      break;
+    }
 
-const date=row.querySelector(".rowDate").value;
+    const in24 = normalizeTimeInput(convertTo24Hour(timeInRaw));
+    const out24 = normalizeTimeInput(convertTo24Hour(timeOutRaw));
 
-const timeIn=row.querySelector(".rowTimeIn").value;
+    if(!in24 || !out24){
+      invalidRow = row;
+      break;
+    }
 
-const timeOut=row.querySelector(".rowTimeOut").value;
+    const breakMinutes = Math.max(0, Math.floor(+row.querySelector(".rowBreak").value || 0));
+    const miaMinutes = Math.max(0, Math.floor(+row.querySelector(".rowMia").value || 0));
+    const lateMinutes = Math.max(0, Math.floor(+row.querySelector(".rowLate").value || 0));
 
-const breakMinutes=parseInt(
-row.querySelector(".rowBreak").value
-)||0;
+    let rawMinutes = calcMinutes(date, in24, out24, breakMinutes / 60);
 
-const miaMinutes=parseInt(
-row.querySelector(".rowMia").value
-)||0;
+    if(!Number.isFinite(rawMinutes) || rawMinutes < 0){
+      invalidRow = row;
+      break;
+    }
 
-const lateMinutes=parseInt(
-row.querySelector(".rowLate").value
-)||0;
+    let finalMinutes = Math.max(0, Math.round(rawMinutes - miaMinutes - lateMinutes));
+    const finalHours = finalMinutes / 60;
 
-if(!date || !timeIn || !timeOut){
+    data.unshift({
+      name: emp.name,
+      date,
+      hours: finalHours,
+      minutes: finalMinutes,
+      break: breakMinutes,
+      mia: miaMinutes,
+      late: lateMinutes,
+      salary: (finalHours * (+emp.rate || 0)).toFixed(2),
+      dollar: (finalHours * (+emp.dollarRate || 0)).toFixed(2),
+      timeIn: in24,
+      timeOut: out24
+    });
 
-return;
+    added++;
+  }
 
-}
+  if(invalidRow){
+    alert("One of the filled rows has a missing or invalid date/time.");
+    invalidRow.querySelector("input")?.focus();
+    return;
+  }
 
-const in24=convertTo24Hour(timeIn);
+  if(added === 0){
+    alert("Please fill in at least one record.");
+    return;
+  }
 
-const out24=convertTo24Hour(timeOut);
-
-let rawMinutes=calcMinutes(
-date,
-in24,
-out24,
-breakMinutes/60
-);
-
-let finalMinutes=
-rawMinutes-
-miaMinutes-
-lateMinutes;
-
-if(finalMinutes<0)
-finalMinutes=0;
-
-const finalHours=finalMinutes/60;
-
-const salary=
-(finalHours*emp.rate).toFixed(2);
-
-const dollar=
-(finalHours*emp.dollarRate).toFixed(2);
-
-data.unshift({
-
-name:emp.name,
-
-date:date,
-
-hours:finalHours,
-
-minutes:finalMinutes,
-
-break:breakMinutes,
-
-mia:miaMinutes,
-
-late:lateMinutes,
-
-salary:salary,
-
-dollar:dollar,
-
-timeIn:normalizeTimeInput(in24),
-
-timeOut:normalizeTimeInput(out24)
-
-});
-
-});
-
-saveAll();
-
-closeAddModal();
-
-setTimeout(() => {
-    window.location.reload();
-}, 100);
+  saveAll();
+  closeAddModal();
+  render();
 }
 
 function closeAddModal(){
@@ -439,6 +390,31 @@ function normalizeTimeInput(value){
   return "";
 }
 
+
+function autoFormatTime(input){
+  const original = input.value.trim();
+  if(!original) return;
+
+  const normalized = normalizeTimeInput(convertTo24Hour(original));
+  if(!normalized){
+    input.classList.add("input-error");
+    return;
+  }
+
+  input.value = formatTime(normalized);
+  input.classList.remove("input-error");
+}
+
+function handlePaste(event, input){
+  event.preventDefault();
+  const pasted = (event.clipboardData || window.clipboardData).getData("text").trim();
+  input.value = pasted;
+
+  setTimeout(() => {
+    autoFormatTime(input);
+  }, 0);
+}
+
 /* ================= ADD ================= */
 
 function openAddModal(){
@@ -463,7 +439,7 @@ function openAddModal(){
   // Always reset the multiple-record form
   recordContainer.innerHTML = "";
 
-  // Always create exactly 5 rows
+  // Always create exactly 7 rows
   for(let i = 0; i < 7; i++){
     addRecordRow();
   }
@@ -476,14 +452,17 @@ function openAddModal(){
 }
 
 function convertTo24Hour(t){
-  t = t.trim().toUpperCase();
+  if(t == null) return "";
+  t = t.toString().trim().toUpperCase();
 
-  let match = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  let match = t.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/);
 
   if(match){
-    let h = parseInt(match[1]);
-    let m = match[2];
+    let h = parseInt(match[1], 10);
+    let m = match[2] || "00";
     let ap = match[3];
+
+    if(h < 1 || h > 12 || +m > 59) return "";
 
     if(ap === "PM" && h !== 12) h += 12;
     if(ap === "AM" && h === 12) h = 0;
@@ -514,51 +493,67 @@ function closeEditModal(){editModal.style.display="none";}
 
 function saveEdit(){
 
-  if (!editTimeIn.value || !editTimeOut.value) {
-    alert("Please enter valid time");
+  if(editIndex == null || !data[editIndex]) return;
+
+  const newName = editName.value.trim();
+  const newDate = editDate.value;
+
+  if(!newName || !newDate || !editTimeIn.value || !editTimeOut.value){
+    alert("Please complete employee, date, time in, and time out.");
     return;
   }
 
-  let d = data[editIndex];
-  let emp = employees.find(e => e.name === d.name);
+  const emp = employees.find(e => e.name === newName);
 
-  let breakMinutes = Math.floor(+editBreak.value || 0);
-  let miaMinutes   = Math.floor(+editMia.value || 0);
-  let lateMinutes  = Math.floor(+editLate.value || 0);
+  if(!emp){
+    alert("Employee not found. Please select a valid employee.");
+    return;
+  }
 
-  // ✅ convert + normalize time first
-  let timeInFixed  = normalizeTimeInput(convertTo24Hour(editTimeIn.value));
-  let timeOutFixed = normalizeTimeInput(convertTo24Hour(editTimeOut.value));
+  const timeInFixed = normalizeTimeInput(convertTo24Hour(editTimeIn.value));
+  const timeOutFixed = normalizeTimeInput(convertTo24Hour(editTimeOut.value));
+
+  if(!timeInFixed || !timeOutFixed){
+    alert("Please enter valid time values.");
+    return;
+  }
+
+  const breakMinutes = Math.max(0, Math.floor(+editBreak.value || 0));
+  const miaMinutes = Math.max(0, Math.floor(+editMia.value || 0));
+  const lateMinutes = Math.max(0, Math.floor(+editLate.value || 0));
 
   let rawMinutes = calcMinutes(
-    d.date,
+    newDate,
     timeInFixed,
     timeOutFixed,
     breakMinutes / 60
   );
 
-  let finalMinutes = rawMinutes - miaMinutes - lateMinutes;
+  if(!Number.isFinite(rawMinutes)){
+    alert("Unable to calculate the selected time range.");
+    return;
+  }
 
-  if(finalMinutes < 0) finalMinutes = 0;
+  const finalMinutes = Math.max(0, Math.round(rawMinutes - miaMinutes - lateMinutes));
+  const finalHours = finalMinutes / 60;
 
-  let finalHours = finalMinutes / 60;
-
-  // ✅ SAVE CLEAN TIME
-  d.timeIn  = timeInFixed;
+  const d = data[editIndex];
+  d.name = newName;
+  d.date = newDate;
+  d.timeIn = timeInFixed;
   d.timeOut = timeOutFixed;
-  d.break   = breakMinutes;
-  d.mia     = miaMinutes;
-  d.late    = lateMinutes;
+  d.break = breakMinutes;
+  d.mia = miaMinutes;
+  d.late = lateMinutes;
   d.minutes = finalMinutes;
-  d.hours   = finalHours;
-  d.salary  = (finalHours * emp.rate).toFixed(2);
-  d.dollar  = (finalHours * emp.dollarRate).toFixed(2);
+  d.hours = finalHours;
+  d.salary = (finalHours * (+emp.rate || 0)).toFixed(2);
+  d.dollar = (finalHours * (+emp.dollarRate || 0)).toFixed(2);
 
   saveAll();
   render();
   closeEditModal();
 }
-
 
 /* ================= CLEAR ================= */
 
@@ -619,9 +614,9 @@ function showPayslip(name, cutoff){
         <td>${formatTime(timeInValue)}</td>
         <td>${formatTime(timeOutValue)}</td>
         <td>${toHHMM(r.hours)}</td>
+        <td>${minutesToHHMM(r.late)}</td>
         <td>${minutesToHHMM(r.break)}</td>
         <td>${minutesToHHMM(r.mia)}</td>
-        <td>${minutesToHHMM(r.late)}</td>
         <td>
           ${isDollar
             ? '$' + (+r.dollar || 0).toFixed(2)
@@ -655,9 +650,9 @@ function showPayslip(name, cutoff){
           <th>Time In</th>
           <th>Time Out</th>
           <th>Hours</th>
+          <th>Late</th>
           <th>Break</th>
           <th>MIA</th>
-          <th>Late</th>
           <th>Pay</th>
         </tr>
         ${tableRows}
@@ -808,7 +803,7 @@ function exportCSV(){
   );
 
   // ✅ filename
-  a.download = "weekly_cutoff.csv";
+  a.download = formatCutoffFilename(currentCutoff);
 
   a.click();
 }
@@ -828,6 +823,11 @@ function formatCutoffFilename(cutoff){
   return `${month}_${startDay}-${endDay}_cutoff.csv`;
 }
 
+function csvEscape(value){
+  const s = String(value ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 function exportMonthlyCSV(){
 
   if(data.length === 0){
@@ -835,18 +835,29 @@ function exportMonthlyCSV(){
     return;
   }
 
-  let grouped = {};
+  const latestDate = data
+    .map(d => d.date)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+
+  if(!latestDate){
+    alert("No valid dated records available");
+    return;
+  }
+
+  const targetMonth = latestDate.slice(0, 7);
+  const grouped = {};
 
   data.forEach(d => {
+    if(!d.date || d.date.slice(0, 7) !== targetMonth) return;
 
-    let month = d.date.slice(0,7); // YYYY-MM
-
-    let key = d.name + month;
+    const key = `${d.name}__${targetMonth}`;
 
     if(!grouped[key]){
       grouped[key] = {
         name: d.name,
-        month: month,
+        month: targetMonth,
         minutes: 0
       };
     }
@@ -859,47 +870,39 @@ function exportMonthlyCSV(){
     return;
   }
 
-  let csv = "Employee,Month,Hours,Pay\n";
+  let csv = "Employee,Month,Hours,Peso Pay,Dollar Pay\n";
 
   Object.values(grouped)
-  .sort((a,b)=>a.name.localeCompare(b.name))
-  .forEach(g=>{
+    .sort((a,b) => a.name.localeCompare(b.name))
+    .forEach(g => {
+      const emp = employees.find(e => e.name === g.name);
+      const hours = g.minutes / 60;
+      const h = Math.floor(g.minutes / 60);
+      const m = Math.round(g.minutes % 60);
+      const hoursFormatted = `${h}:${m.toString().padStart(2,'0')}`;
 
-    let emp = employees.find(e => e.name === g.name);
+      const pesoPay = emp && +emp.rate > 0 ? (hours * +emp.rate).toFixed(2) : "";
+      const dollarPay = emp && +emp.dollarRate > 0 ? (hours * +emp.dollarRate).toFixed(2) : "";
 
-    let hours = g.minutes / 60;
+      csv += [
+        csvEscape(g.name),
+        csvEscape(g.month),
+        csvEscape(hoursFormatted),
+        csvEscape(pesoPay),
+        csvEscape(dollarPay)
+      ].join(",") + "\n";
+    });
 
-    let h = Math.floor(g.minutes / 60);
-    let m = g.minutes % 60;
-    let hoursFormatted = `${h}:${m.toString().padStart(2,'0')}`;
-
-    let pesoPay = "";
-    let dollarPay = "";
-
-    if(emp){
-      if(emp.rate > 0){
-        pesoPay = (hours * emp.rate).toFixed(2);
-      }
-      if(emp.dollarRate > 0){
-        dollarPay = (hours * emp.dollarRate).toFixed(2);
-      }
-    }
-
-    csv += `${g.name},${g.cutoff},${hoursFormatted},${pesoPay},${dollarPay}\n`;
-  });
-
-  let a = document.createElement("a");
-  a.href = URL.createObjectURL(
-    new Blob(["\uFEFF"+csv], {type:"text/csv;charset=utf-8;"})
+  const url = URL.createObjectURL(
+    new Blob(["\uFEFF" + csv], {type:"text/csv;charset=utf-8;"})
   );
 
-  // filename like: 2026-05_monthly.csv
-  let today = new Date();
-  let monthName = today.toISOString().slice(0,7);
-
-  a.download = `${monthName}_monthly.csv`;
-
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${targetMonth}_monthly.csv`;
   a.click();
+
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 /* ================= DOWNLOAD PNG  ================= */
@@ -933,10 +936,12 @@ function downloadPayslipPNG(){
     link.href = canvas.toDataURL("image/png");
     link.click();
 
-    // 🔥 Restore UI
+  }).catch(err => {
+    console.error("Payslip PNG export failed:", err);
+    alert("Unable to save the payslip PNG.");
+  }).finally(() => {
     element.classList.remove("export-mode");
-    if(footer) footer.style.display = "block";
-
+    if(footer) footer.style.display = "";
   });
 }
 
@@ -960,7 +965,7 @@ function render(){
     if(search && !row.item.name.toLowerCase().includes(search)) return false;
     return true;
   })
-  .slice(0,5)
+  .slice(0,7)
   .forEach(row=>{
 
     let d = row.item;
@@ -974,8 +979,8 @@ function render(){
         <td>${d.late} min</td>
         <td>${d.break} min</td>
         <td>${d.mia} min</td>
-        <td>₱${d.salary}</td>
-        <td>$${d.dollar}</td>
+        <td>${(+d.salary || 0) > 0 ? '₱' + (+d.salary).toFixed(2) : '-'}</td>
+        <td>${(+d.dollar || 0) > 0 ? '$' + (+d.dollar).toFixed(2) : '-'}</td>
         <td>
           <button onclick="openEdit(${i})">Edit</button>
           <button onclick="if(confirm('Delete?')){data.splice(${i},1);saveAll();render();}">
@@ -1050,8 +1055,8 @@ function render(){
         <td>${w.late} min</td>
         <td>${w.break} min</td>
         <td>${w.mia} min</td>
-        <td>₱${w.salary.toFixed(2)}</td>
-        <td>$${w.dollar.toFixed(2)}</td>
+        <td>${w.salary > 0 ? '₱' + w.salary.toFixed(2) : '-'}</td>
+        <td>${w.dollar > 0 ? '$' + w.dollar.toFixed(2) : '-'}</td>
         <td>
           <button onclick="showPayslip('${w.name}','${w.cutoff}')">
             Payslip
@@ -1073,8 +1078,8 @@ function render(){
         <td>${m.late} min</td>
         <td>${m.break} min</td>
         <td>${m.mia} min</td>
-        <td>₱${m.salary.toFixed(2)}</td>
-        <td>$${m.dollar.toFixed(2)}</td>
+        <td>${m.salary > 0 ? '₱' + m.salary.toFixed(2) : '-'}</td>
+        <td>${m.dollar > 0 ? '$' + m.dollar.toFixed(2) : '-'}</td>
       </tr>
     `;
   });
@@ -1106,27 +1111,44 @@ document.querySelectorAll("input, select").forEach(el=>{
   });
 });
 
-/* ================= ENTER KEY BEHAVIOR ================= */
+/* ================= ADD MODAL - ENTER TO SAVE ALL ================= */
 
-document.querySelectorAll("#addModal input, #addModal select").forEach(el=>{
-  el.addEventListener("keydown", function(e){
-    if(e.key === "Enter"){
-      e.preventDefault();
+document.addEventListener("keydown", function(e){
 
-      clearErrors(addModal);
+  // Only run when Enter is pressed
+  if(e.key !== "Enter") return;
 
-      let requiredFields = [
-        employeeSelect,
-        date,
-        timeIn,
-        timeOut
-      ];
+  // Only run if Add Record modal is currently open
+  if(
+    typeof addModal !== "undefined" &&
+    getComputedStyle(addModal).display === "flex" &&
+    e.target.closest("#addModal")
+  ){
+    e.preventDefault();
 
-      if(validateFields(requiredFields)){
-        add();
-      }
+    // Prevent accidental double-save
+    if(window.isSavingRecords) return;
+
+    // Employee must be selected
+    if(!employeeSelect.value){
+      employeeSelect.classList.add("input-error");
+      employeeSelect.focus();
+      return;
     }
-  });
+
+    // Save all filled records
+    window.isSavingRecords = true;
+
+    try{
+      addMultipleRecords();
+    }finally{
+      // Small delay prevents rapid Enter presses
+      setTimeout(() => {
+        window.isSavingRecords = false;
+      }, 500);
+    }
+  }
+
 });
 
 document.querySelectorAll("#editModal input").forEach(el=>{

@@ -310,3 +310,20 @@ td:first-child{
     padding:12px 8px;
   }
 }
+
+.rowLate::-webkit-inner-spin-button,
+.rowLate::-webkit-outer-spin-button,
+.rowBreak::-webkit-inner-spin-button,
+.rowBreak::-webkit-outer-spin-button,
+.rowMia::-webkit-inner-spin-button,
+.rowMia::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.rowLate,
+.rowBreak,
+.rowMia {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}

@@ -183,9 +183,32 @@ function addMultipleRecords(){
     return;
   }
 
+  // Save all records
   saveAll();
-  closeAddModal();
   render();
+
+// Keep the dates for the next entries
+const savedDates = [...document.querySelectorAll(".rowDate")]
+    .map(input => input.value);
+
+// Clear only the editable fields
+document.querySelectorAll(".recordRow").forEach(row => {
+    row.querySelector(".rowTimeIn").value = "";
+    row.querySelector(".rowTimeOut").value = "";
+    row.querySelector(".rowLate").value = "";
+    row.querySelector(".rowBreak").value = "";
+    row.querySelector(".rowMia").value = "";
+});
+
+// Restore the dates
+document.querySelectorAll(".rowDate").forEach((input, i) => {
+    input.value = savedDates[i] || "";
+});
+
+// Keep employee selected
+employeeSelect.focus();
+
+alert(`${added} record(s) saved successfully.`);
 }
 
 function closeAddModal(){
@@ -440,9 +463,11 @@ function openAddModal(){
   recordContainer.innerHTML = "";
 
   // Always create exactly 7 rows
-  for(let i = 0; i < 7; i++){
-    addRecordRow();
-  }
+  if(recordContainer.children.length === 0){
+    for(let i = 0; i < 7; i++){
+        addRecordRow();
+    }
+}
 
   addModal.style.display = "flex";
 

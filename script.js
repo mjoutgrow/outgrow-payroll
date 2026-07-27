@@ -459,11 +459,8 @@ function openAddModal(){
     `;
   });
 
-  // Always reset the multiple-record form
-  recordContainer.innerHTML = "";
-
-  // Always create exactly 7 rows
-  if(recordContainer.children.length === 0){
+// Only create rows the first time
+if(recordContainer.children.length === 0){
     for(let i = 0; i < 7; i++){
         addRecordRow();
     }

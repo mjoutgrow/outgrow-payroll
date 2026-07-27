@@ -128,19 +128,18 @@ function addMultipleRecords(){
     // Completely blank rows are allowed and ignored.
     if(!date && !timeInRaw && !timeOutRaw) continue;
 
-    if(!date || !timeInRaw || !timeOutRaw){
-      invalidRow = row;
-      break;
-    }
+    // Skip rows that are incomplete instead of throwing an error.
+    if (!date || !timeInRaw || !timeOutRaw) {
+    continue;
+}
 
     const in24 = normalizeTimeInput(convertTo24Hour(timeInRaw));
     const out24 = normalizeTimeInput(convertTo24Hour(timeOutRaw));
 
-    if(!in24 || !out24){
-      invalidRow = row;
-      break;
-    }
-
+// Skip rows with invalid time instead of stopping everything.
+    if (!in24 || !out24) {
+    continue;
+}
     const breakMinutes = Math.max(0, Math.floor(+row.querySelector(".rowBreak").value || 0));
     const miaMinutes = Math.max(0, Math.floor(+row.querySelector(".rowMia").value || 0));
     const lateMinutes = Math.max(0, Math.floor(+row.querySelector(".rowLate").value || 0));
@@ -170,12 +169,6 @@ function addMultipleRecords(){
     });
 
     added++;
-  }
-
-  if(invalidRow){
-    alert("One of the filled rows has a missing or invalid date/time.");
-    invalidRow.querySelector("input")?.focus();
-    return;
   }
 
   if(added === 0){

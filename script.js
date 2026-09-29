@@ -576,15 +576,33 @@ function openClearModal(){clearModal.style.display="flex";}
 function closeClearModal(){clearModal.style.display="none";}
 function confirmClear(){data=[];saveAll();render();closeClearModal();}
 
-/* ================= CUTOFF ================= */
+/* ================= PAYROLL CUTOFF ================= */
 
+// Payroll periods are fixed to the 1st-15th and 16th-last day of each month.
 function getCutoff(date){
-  let d=toEST(date);
-  let day=d.getDay();
-  let diff=d.getDate()-day+(day===0?-6:1);
-  let mon=new Date(d);mon.setDate(diff);
-  let sun=new Date(mon);sun.setDate(mon.getDate()+6);
-  return mon.toISOString().split("T")[0]+" to "+sun.toISOString().split("T")[0];
+  const d = toEST(date);
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  const day = d.getDate();
+
+  let startDay, endDay;
+  if(day <= 15){
+    startDay = 1;
+    endDay = 15;
+  }else{
+    startDay = 16;
+    endDay = new Date(year, month + 1, 0).getDate();
+  }
+
+  const start = new Date(year, month, startDay);
+  const end = new Date(year, month, endDay);
+
+  const fmt = d =>
+    d.getFullYear() + "-" +
+    String(d.getMonth()+1).padStart(2,'0') + "-" +
+    String(d.getDate()).padStart(2,'0');
+
+  return fmt(start) + " to " + fmt(end);
 }
 
 /* ================= PAYSLIP ================= */
@@ -744,28 +762,28 @@ function exportCSV(){
     return;
   }
 
-  // ✅ Get latest date from records
-  let latestDate = data
-    .map(d => new Date(d.date))
-    .sort((a,b)=>b-a)[0];
+  // Automatically export the latest 15-day payroll cutoff represented in the records.
+  const latestDate = data
+    .map(d => d.date)
+    .filter(Boolean)
+    .sort((a,b) => new Date(b) - new Date(a))[0];
 
-  let latestStr =
-    latestDate.getFullYear() + "-" +
-    String(latestDate.getMonth()+1).padStart(2,'0') + "-" +
-    String(latestDate.getDate()).padStart(2,'0');
+  if(!latestDate){
+    alert("No valid dated records available");
+    return;
+  }
 
-  let currentCutoff = getCutoff(latestStr);
-
+  const currentCutoff = getCutoff(latestDate);
   let grouped = {};
 
   data.forEach(d => {
 
-    let cutoff = getCutoff(d.date);
+    const cutoff = getCutoff(d.date);
 
-    // ✅ ONLY LATEST CUTOFF (not today's)
+    // Export ONLY the latest 15-day payroll cutoff.
     if(cutoff !== currentCutoff) return;
 
-    let key = d.name + cutoff;
+    const key = d.name + cutoff;
 
     if(!grouped[key]){
       grouped[key] = {
@@ -779,47 +797,39 @@ function exportCSV(){
   });
 
   if(Object.keys(grouped).length === 0){
-    alert("No records found for latest cutoff");
+    alert("No records found for the latest 15-day payroll cutoff");
     return;
   }
 
   let csv = "Employee,Cutoff,Hours,Peso Pay,Dollar Pay\n";
 
   Object.values(grouped)
-  .sort((a,b)=>a.name.localeCompare(b.name))
-  .forEach(g=>{
+    .sort((a,b)=>a.name.localeCompare(b.name))
+    .forEach(g=>{
 
-    let emp = employees.find(e => e.name === g.name);
+      const emp = employees.find(e => e.name === g.name);
+      const hours = g.minutes / 60;
 
-    let hours = g.minutes / 60;
+      const h = Math.floor(g.minutes / 60);
+      const m = g.minutes % 60;
+      const hoursFormatted = `${h}:${m.toString().padStart(2,'0')}`;
 
-    let h = Math.floor(g.minutes / 60);
-    let m = g.minutes % 60;
-    let hoursFormatted = `${h}:${m.toString().padStart(2,'0')}`;
+      let pesoPay = "";
+      let dollarPay = "";
 
-    let pesoPay = "";
-    let dollarPay = "";
-
-    if(emp){
-      if(emp.rate > 0){
-        pesoPay = (hours * emp.rate).toFixed(2);
+      if(emp){
+        if(emp.rate > 0) pesoPay = (hours * emp.rate).toFixed(2);
+        if(emp.dollarRate > 0) dollarPay = (hours * emp.dollarRate).toFixed(2);
       }
-      if(emp.dollarRate > 0){
-        dollarPay = (hours * emp.dollarRate).toFixed(2);
-      }
-    }
 
-    csv += `${g.name},${g.cutoff},${hoursFormatted},${pesoPay},${dollarPay}\n`;
-  });
+      csv += `${g.name},${g.cutoff},${hoursFormatted},${pesoPay},${dollarPay}\n`;
+    });
 
-  let a = document.createElement("a");
+  const a = document.createElement("a");
   a.href = URL.createObjectURL(
     new Blob(["\uFEFF"+csv], {type:"text/csv;charset=utf-8;"})
   );
-
-  // ✅ filename
   a.download = formatCutoffFilename(currentCutoff);
-
   a.click();
 }
 
@@ -963,6 +973,7 @@ function downloadPayslipPNG(){
 /* ================= RENDER ================= */
 
 function render(){
+
 
   tbody.innerHTML = "";
   summaryBody.innerHTML = "";

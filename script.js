@@ -95,7 +95,7 @@ recordRowHTML()
 
 }
 
-function addMultipleRecordsLegacy(){
+function addMultipleRecords(){
 
   if(!employeeSelect.value){
     alert("Please select employee.");
@@ -260,7 +260,7 @@ function migrateExistingIncentives(){
   localStorage.setItem("weeklyIncentives", JSON.stringify(weeklyIncentives));
 }
 
-const saveAllLegacy = () => {
+const saveAll = () => {
   localStorage.setItem("employees", JSON.stringify(employees));
   localStorage.setItem("payrollData", JSON.stringify(data));
   localStorage.setItem("weeklyIncentives", JSON.stringify(weeklyIncentives));
@@ -908,7 +908,7 @@ function updateWeeklyIncentive(name, cutoff, value){
 
 /* ================= RENDER ================= */
 
-function renderLegacy(){
+function render(){
 
   tbody.innerHTML = "";
   summaryBody.innerHTML = "";
@@ -1174,266 +1174,6 @@ document.addEventListener("keydown", function(e){
   }
 });
 
-/* ================= OUTGROW PAYROLL V2 ================= */
-
-let cutoffLocks = JSON.parse(localStorage.getItem("cutoffLocks")) || {};
-let auditLog = JSON.parse(localStorage.getItem("payrollAuditLog")) || [];
-employees.forEach(e => { if(typeof e.active !== "boolean") e.active = true; });
-saveAll();
-
-function nowStamp(){
-  return new Date().toLocaleString("en-US", {year:"numeric",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
-}
-function audit(action, detail){
-  auditLog.unshift({time:nowStamp(), action, detail});
-  auditLog = auditLog.slice(0,500);
-  localStorage.setItem("payrollAuditLog", JSON.stringify(auditLog));
-}
-function saveAll(){
-  localStorage.setItem("employees", JSON.stringify(employees));
-  localStorage.setItem("payrollData", JSON.stringify(data));
-  localStorage.setItem("weeklyIncentives", JSON.stringify(weeklyIncentives));
-  localStorage.setItem("cutoffLocks", JSON.stringify(cutoffLocks));
-  localStorage.setItem("payrollAuditLog", JSON.stringify(auditLog));
-}
-function isCutoffLocked(cutoff){ return !!cutoffLocks[cutoff]; }
-function cutoffForRecord(index){ return data[index] ? getCutoff(data[index].date) : ""; }
-
-function clearFilters(){
-  searchInput.value=""; cutoffFilter.value=""; monthFilter.value=""; statusFilter.value="";
-  toggleClearBtn(); render();
-}
-function populateFilters(){
-  const currentCutoff = cutoffFilter.value, currentMonth = monthFilter.value;
-  const cutoffs=[...new Set(data.map(d=>d.date).filter(Boolean).map(getCutoff))].sort((a,b)=>new Date(a.split(" to ")[0])-new Date(b.split(" to ")[0])).reverse();
-  cutoffFilter.innerHTML='<option value="">All Cutoffs</option>'+cutoffs.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
-  if(cutoffs.includes(currentCutoff)) cutoffFilter.value=currentCutoff;
-  const months=[...new Set(data.map(d=>d.date).filter(Boolean).map(d=>d.slice(0,7)))].sort().reverse();
-  monthFilter.innerHTML='<option value="">All Months</option>'+months.map(m=>`<option value="${m}">${m}</option>`).join("");
-  if(months.includes(currentMonth)) monthFilter.value=currentMonth;
-}
-function escapeHtml(v){return String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));}
-function jsArg(v){return JSON.stringify(v).replace(/</g,"\\u003c");}
-
-function cutoffDates(cutoff){
-  if(!cutoff) return [];
-  const [a,b]=cutoff.split(" to "); if(!a||!b) return [];
-  const start=new Date(a+"T00:00:00"), end=new Date(b+"T00:00:00"), out=[];
-  for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
-    out.push(d.toISOString().slice(0,10));
-  }
-  return out;
-}
-function groupStatus(w){
-  const incentive=getWeeklyIncentive(w.name,w.cutoff);
-  if(isCutoffLocked(w.cutoff)) return "locked";
-  if(incentive>0) return "incentive";
-  return "complete";
-}
-function passesFilters(name, month, cutoff){
-  const search=searchInput.value.toLowerCase().trim();
-  if(search && !name.toLowerCase().includes(search)) return false;
-  if(cutoffFilter.value && cutoffFilter.value!==cutoff) return false;
-  if(monthFilter.value && monthFilter.value!==month) return false;
-  const status=statusFilter.value;
-  if(status){
-    const s=groupStatus({name,cutoff});
-    if(s!==status) return false;
-  }
-  return true;
-}
-function passesMonthlyFilters(m){
-  const search=searchInput.value.toLowerCase().trim();
-  if(search && !m.name.toLowerCase().includes(search)) return false;
-  if(monthFilter.value && monthFilter.value!==m.month) return false;
-  if(cutoffFilter.value && !m.cutoffs.has(cutoffFilter.value)) return false;
-  if(statusFilter.value){
-    const match=[...m.cutoffs].some(c=>groupStatus({name:m.name,cutoff:c})===statusFilter.value);
-    if(!match) return false;
-  }
-  return true;
-}
-function statusBadge(status){
-  const map={complete:["Complete","status-ok"],incentive:["🎁 Incentive","status-incentive"],locked:["🔒 Locked","status-lock"]};
-  const [label,cls]=map[status]||[status,"status-pill"];
-  return `<span class="status-pill ${cls}">${label}</span>`;
-}
-function formatMoneyForEmployee(emp,peso,dollar){
-  return emp && +emp.dollarRate>0 ? "$"+(+dollar||0).toFixed(2) : "₱"+(+peso||0).toFixed(2);
-}
-
-function renderDashboard(weekly){
-  const active=employees.filter(e=>e.active!==false).length;
-  const groups=Object.values(weekly);
-  const latest=groups.slice().sort((a,b)=>new Date(b.cutoff.split(" to ")[0])-new Date(a.cutoff.split(" to ")[0]))[0];
-  let pesoPayroll=0,dollarPayroll=0,pesoInc=0,dollarInc=0,hours=0;
-  if(latest){
-    groups.filter(w=>w.cutoff===latest.cutoff).forEach(w=>{
-      const emp=employees.find(e=>e.name===w.name), inc=getWeeklyIncentive(w.name,w.cutoff);
-      if(emp&&+emp.dollarRate>0){ dollarPayroll+=w.dollar+inc; dollarInc+=inc; }
-      else { pesoPayroll+=w.salary+inc; pesoInc+=inc; }
-      hours+=w.minutes;
-    });
-  }
-  dashEmployees.textContent=active;
-  dashPayroll.textContent=latest?`₱${pesoPayroll.toFixed(2)}${dollarPayroll>0?` / $${dollarPayroll.toFixed(2)}`:""}`:"-";
-  dashIncentives.textContent=latest?`₱${pesoInc.toFixed(2)}${dollarInc>0?` / $${dollarInc.toFixed(2)}`:""}`:"-";
-  dashHours.textContent=formatDuration(hours);
-  dashLocked.textContent=Object.keys(cutoffLocks).filter(k=>cutoffLocks[k]).length;
-}
-function render(){
-  migrateExistingIncentives();
-  populateFilters();
-  tbody.innerHTML=""; summaryBody.innerHTML=""; monthlyBody.innerHTML="";
-  const weeklyMap={}, monthlyMap={};
-
-  data.forEach((d,index)=>{
-    const cutoff=getCutoff(d.date), month=(d.date||"").slice(0,7);
-    const key=d.name+"||"+cutoff;
-    if(!weeklyMap[key]) weeklyMap[key]={name:d.name,cutoff,minutes:0,late:0,break:0,mia:0,salary:0,dollar:0};
-    weeklyMap[key].minutes+=+(d.minutes||0); weeklyMap[key].late+=+(d.late||0); weeklyMap[key].break+=+(d.break||0); weeklyMap[key].mia+=+(d.mia||0); weeklyMap[key].salary+=+(d.salary||0); weeklyMap[key].dollar+=+(d.dollar||0);
-    const mk=d.name+"||"+month;
-    if(!monthlyMap[mk]) monthlyMap[mk]={name:d.name,month,minutes:0,late:0,break:0,mia:0,salary:0,dollar:0,cutoffs:new Set()};
-    monthlyMap[mk].minutes+=+(d.minutes||0); monthlyMap[mk].late+=+(d.late||0); monthlyMap[mk].break+=+(d.break||0); monthlyMap[mk].mia+=+(d.mia||0); monthlyMap[mk].salary+=+(d.salary||0); monthlyMap[mk].dollar+=+(d.dollar||0); monthlyMap[mk].cutoffs.add(cutoff);
-  });
-
-  const weekly=Object.values(weeklyMap).sort((a,b)=>new Date(b.cutoff.split(" to ")[0])-new Date(a.cutoff.split(" to ")[0])||a.name.localeCompare(b.name));
-  const monthly=Object.values(monthlyMap).sort((a,b)=>b.month.localeCompare(a.month)||a.name.localeCompare(b.name));
-  renderDashboard(weeklyMap);
-
-  data.map((item,index)=>({item,index})).filter(x=>passesFilters(x.item.name,(x.item.date||"").slice(0,7),getCutoff(x.item.date))).slice(0,20).forEach(({item:d,index:i})=>{
-    const locked=isCutoffLocked(getCutoff(d.date));
-    tbody.innerHTML+=`<tr><td>${escapeHtml(d.name)}</td><td>${d.date}</td><td>${formatDuration(d.minutes)}</td><td>${d.late} min</td><td>${d.break} min</td><td>${d.mia} min</td><td>${(+d.salary||0)>0?'₱'+(+d.salary).toFixed(2):'-'}</td><td>${(+d.dollar||0)>0?'$'+(+d.dollar).toFixed(2):'-'}</td><td>${locked?statusBadge('locked'):statusBadge('complete')}</td><td>${locked?'<span class="small-muted">Locked</span>':`<button onclick="openEdit(${i})">Edit</button><button onclick="deleteRecord(${i})">Delete</button>`}</td></tr>`;
-  });
-
-  weekly.filter(w=>passesFilters(w.name,w.cutoff.split(" to ")[0].slice(0,7),w.cutoff)).forEach(w=>{
-    const emp=employees.find(e=>e.name===w.name), inc=getWeeklyIncentive(w.name,w.cutoff), isDollar=emp&&+emp.dollarRate>0, base=isDollar?w.dollar:w.salary,total=base+inc, locked=isCutoffLocked(w.cutoff), stat=groupStatus(w);
-    const money=v=>isDollar?'$'+v.toFixed(2):'₱'+v.toFixed(2), nameArg=jsArg(w.name), cutoffArg=jsArg(w.cutoff);
-    const gapText="";
-    summaryBody.innerHTML+=`<tr><td>${escapeHtml(w.name)}</td><td>${escapeHtml(w.cutoff)} ${locked?statusBadge('locked'):''}${gapText}</td><td>${formatDuration(w.minutes)}</td><td>${w.late} min</td><td>${w.break} min</td><td>${w.mia} min</td><td>${w.salary>0?'₱'+w.salary.toFixed(2):'-'}</td><td>${w.dollar>0?'$'+w.dollar.toFixed(2):'-'}</td><td><input type="number" min="0" step="0.01" value="${inc?inc.toFixed(2):''}" placeholder="0.00" ${locked?'disabled':''} onchange='updateWeeklyIncentive(${nameArg},${cutoffArg},this.value)' onkeydown="if(event.key==='Enter')this.blur();"></td><td><strong>${money(total)}</strong></td><td><button onclick='showPayslip(${nameArg},${cutoffArg})'>Payslip</button><button class="${locked?'btn-success':'btn-lock'}" onclick='toggleCutoffLock(${cutoffArg})'>${locked?'🔓 Unlock':'🔒 Lock'}</button></td></tr>`;
-  });
-
-  monthly.filter(passesMonthlyFilters).forEach(m=>{
-    const emp=employees.find(e=>e.name===m.name), inc=[...m.cutoffs].reduce((s,c)=>s+getWeeklyIncentive(m.name,c),0), isDollar=emp&&+emp.dollarRate>0, base=isDollar?m.dollar:m.salary, money=v=>isDollar?'$'+v.toFixed(2):'₱'+v.toFixed(2);
-    monthlyBody.innerHTML+=`<tr><td>${escapeHtml(m.name)}</td><td>${m.month}</td><td>${formatDuration(m.minutes)}</td><td>${m.late} min</td><td>${m.break} min</td><td>${m.mia} min</td><td>${m.salary>0?'₱'+m.salary.toFixed(2):'-'}</td><td>${m.dollar>0?'$'+m.dollar.toFixed(2):'-'}</td><td>${inc>0?money(inc):'-'}</td><td><strong>${money(base+inc)}</strong></td></tr>`;
-  });
-}
-
-function deleteRecord(i){
-  if(!data[i]) return;
-  const cutoff=getCutoff(data[i].date);
-  if(isCutoffLocked(cutoff)){alert("This cutoff is locked. Unlock it before editing payroll records.");return;}
-  if(confirm("Delete this record?")){ const d=data[i]; data.splice(i,1); audit("Record deleted",`${d.name} • ${d.date}`); saveAll(); render(); }
-}
-function toggleCutoffLock(cutoff){
-  if(isCutoffLocked(cutoff)){
-    if(!confirm(`Unlock cutoff ${cutoff}? Payroll records and incentive values can be edited again.`)) return;
-    delete cutoffLocks[cutoff]; audit("Cutoff unlocked",cutoff);
-  }else{
-    if(!confirm(`Finalize and lock cutoff ${cutoff}? This prevents attendance and incentive edits until unlocked.`)) return;
-    cutoffLocks[cutoff]={lockedAt:nowStamp()}; audit("Cutoff finalized",cutoff);
-  }
-  saveAll(); render();
-}
-function updateWeeklyIncentive(name,cutoff,value){
-  if(isCutoffLocked(cutoff)){alert("This cutoff is locked.");render();return;}
-  const numeric=Math.max(0,Number(value)||0), key=incentiveKey(name,cutoff), old=getWeeklyIncentive(name,cutoff);
-  if(numeric===0) delete weeklyIncentives[key]; else weeklyIncentives[key]=numeric;
-  audit("Weekly incentive changed",`${name} • ${cutoff} • ${old?old:0} → ${numeric}`);
-  saveAll(); render();
-}
-
-function openEdit(i){
-  if(data[i] && isCutoffLocked(getCutoff(data[i].date))){alert("This cutoff is locked. Unlock it before editing.");return;}
-  editIndex=i; const d=data[i];
-  editName.value=d.name; editDate.value=d.date; editTimeIn.value=normalizeTimeInput(d.timeIn)||d.timeIn; editTimeOut.value=normalizeTimeInput(d.timeOut)||d.timeOut; editBreak.value=d.break?d.break:''; editMia.value=d.mia?d.mia:''; editLate.value=d.late?d.late:''; editModal.style.display="flex";
-}
-function saveEdit(){
-  if(editIndex==null||!data[editIndex])return;
-  const oldCutoff=getCutoff(data[editIndex].date);
-  if(isCutoffLocked(oldCutoff)){alert("This cutoff is locked. Unlock it before editing.");return;}
-  const newName=editName.value.trim(), newDate=editDate.value, emp=employees.find(e=>e.name===newName);
-  if(!newName||!newDate||!editTimeIn.value||!editTimeOut.value||!emp){alert("Please complete the record.");return;}
-  const ti=normalizeTimeInput(convertTo24Hour(editTimeIn.value)),to=normalizeTimeInput(convertTo24Hour(editTimeOut.value)); if(!ti||!to){alert("Please enter valid time values.");return;}
-  const br=Math.max(0,Math.floor(+editBreak.value||0)),mia=Math.max(0,Math.floor(+editMia.value||0)),late=Math.max(0,Math.floor(+editLate.value||0));
-  const raw=calcMinutes(newDate,ti,to,br/60); if(!Number.isFinite(raw)){alert("Unable to calculate time.");return;}
-  const mins=Math.max(0,Math.round(raw-mia-late)),h=mins/60,d=data[editIndex];
-  d.name=newName;d.date=newDate;d.timeIn=ti;d.timeOut=to;d.break=br;d.mia=mia;d.late=late;d.minutes=mins;d.hours=h;d.salary=(h*(+emp.rate||0)).toFixed(2);d.dollar=(h*(+emp.dollarRate||0)).toFixed(2);
-  audit("Record edited",`${newName} • ${newDate}`);saveAll();render();closeEditModal();
-}
-
-function addMultipleRecords(){
-  const rows=[...document.querySelectorAll('.recordRow')];
-  const lockedDates=rows.map(r=>r.querySelector('.rowDate')?.value).filter(Boolean).filter(d=>isCutoffLocked(getCutoff(d)));
-  if(lockedDates.length){alert("One or more selected dates belong to a locked cutoff: "+[...new Set(lockedDates)].join(", "));return;}
-  addMultipleRecordsLegacy();
-  audit("Attendance records added",`${employeeSelect.value}`);
-  saveAll(); render();
-}
-
-function addEmployee(){
-  const name=empName.value.trim(); if(!name)return;
-  if(employees.some(e=>e.name.toLowerCase()===name.toLowerCase())){alert("Employee already exists.");return;}
-  employees.push({name,rate:+empRate.value||0,dollarRate:+empDollarRate.value||0,active:true});
-  audit("Employee added",name); saveAll(); renderEmployees(); render(); empName.value="";empRate.value="";empDollarRate.value="";
-}
-function editEmployee(i){
-  const e=employees[i]; if(!e)return;
-  const hasLockedRecords=data.some(d=>d.name===e.name && isCutoffLocked(getCutoff(d.date)));
-  if(hasLockedRecords){alert("This employee has locked payroll cutoffs. Unlock those cutoffs before changing the employee name or rates.");return;}
-  const old=e.name,newName=prompt("Name",e.name); if(!newName||newName.trim()===old)return;
-  const newRate=+prompt("₱ Rate",e.rate)||0,newDollar=+prompt("$ Rate",e.dollarRate)||0; e.name=newName.trim();e.rate=newRate;e.dollarRate=newDollar;
-  data.forEach(d=>{if(d.name===old){d.name=e.name;const h=(d.minutes||0)/60;d.salary=(h*newRate).toFixed(2);d.dollar=(h*newDollar).toFixed(2);}});
-  Object.keys(weeklyIncentives).forEach(k=>{if(k.startsWith(old+"||")){const c=k.slice((old+"||").length);weeklyIncentives[incentiveKey(e.name,c)]=weeklyIncentives[k];delete weeklyIncentives[k];}});
-  audit("Employee updated",`${old} → ${e.name}`);saveAll();renderEmployees();render();
-}
-function toggleEmployeeActive(i){
-  const e=employees[i]; if(!e)return; e.active=e.active===false; audit(e.active?"Employee activated":"Employee deactivated",e.name); saveAll(); renderEmployees(); render();
-}
-function deleteEmployee(i){toggleEmployeeActive(i);}
-function renderEmployees(){
-  empList.innerHTML=employees.map((e,i)=>`<div class="employee-row ${e.active===false?'inactive':''}"><strong>${escapeHtml(e.name)}</strong> ${e.active===false?'<span class="status-pill">Inactive</span>':'<span class="status-pill status-ok">Active</span>'}<div class="small-muted">₱${(+e.rate||0).toFixed(2)}/hr ${+e.dollarRate>0?'• $'+(+e.dollarRate).toFixed(2)+'/hr':''}</div><div class="employee-actions"><button onclick="editEmployee(${i})">Edit</button><button onclick="toggleEmployeeActive(${i})">${e.active===false?'Activate':'Deactivate'}</button><button onclick='showEmployeeHistory(${jsArg(e.name)})'>History</button></div></div>`).join('');
-}
-function openAddModal(){
-  const active=employees.filter(e=>e.active!==false); if(!active.length){alert("Please add or activate an employee first.");return;}
-  employeeSelect.innerHTML='<option value="">-- Select Employee --</option>'+active.map(e=>`<option value="${escapeHtml(e.name)}">${escapeHtml(e.name)}</option>`).join('');
-  if(recordContainer.children.length===0) for(let i=0;i<7;i++) addRecordRow();
-  addModal.style.display="flex";
-}
-
-function showEmployeeHistory(name){
-  const emp=employees.find(e=>e.name===name), groups=allCutoffGroups().filter(w=>w.name===name).sort((a,b)=>new Date(b.cutoff.split(' to ')[0])-new Date(a.cutoff.split(' to ')[0]));
-  const isDollar=emp&&+emp.dollarRate>0; const money=v=>isDollar?'$'+v.toFixed(2):'₱'+v.toFixed(2);
-  let total=0; groups.forEach(w=>{total+=(isDollar?w.dollar:w.salary)+getWeeklyIncentive(name,w.cutoff);});
-  historyContent.innerHTML=`<h3>👤 ${escapeHtml(name)} — Payroll History</h3><div class="small-muted">Lifetime payroll shown from saved records.</div><table class="history-table"><tr><th>Cutoff</th><th>Hours</th><th>Base Pay</th><th>Incentive</th><th>Total</th><th>Status</th></tr>${groups.map(w=>{const base=isDollar?w.dollar:w.salary,inc=getWeeklyIncentive(name,w.cutoff);return `<tr><td>${w.cutoff}</td><td>${formatDuration(w.minutes)}</td><td>${money(base)}</td><td>${inc?money(inc):'-'}</td><td><strong>${money(base+inc)}</strong></td><td>${isCutoffLocked(w.cutoff)?statusBadge('locked'):statusBadge(inc?'incentive':'complete')}</td></tr>`}).join('')}</table><div class="payslip-total"><strong>Total Historical Pay:</strong> ${money(total)}</div>`;
-  historyModal.style.display='flex';
-}
-function openAuditModal(){
-  auditContent.innerHTML=auditLog.length?auditLog.map(x=>`<div class="employee-row"><strong>${escapeHtml(x.action)}</strong><div class="small-muted">${escapeHtml(x.time)}</div><div>${escapeHtml(x.detail)}</div></div>`).join(''):'<p class="small-muted">No audit activity yet.</p>';
-  auditModal.style.display='flex';
-}
-function backupPayroll(){
-  const payload={version:2,exportedAt:new Date().toISOString(),employees,data,weeklyIncentives,cutoffLocks,auditLog};
-  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`outgrow_payroll_backup_${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(a.href);audit("Backup exported","Payroll backup created");
-}
-function restorePayroll(){restoreFile.value='';restoreFile.click();}
-function handleRestoreFile(event){
-  const file=event.target.files?.[0]; if(!file)return; const reader=new FileReader();
-  reader.onload=()=>{try{const p=JSON.parse(reader.result);if(!Array.isArray(p.employees)||!Array.isArray(p.data))throw new Error('Invalid backup');if(!confirm('Restore this payroll backup? Current browser data will be replaced.'))return;employees=p.employees;data=p.data;weeklyIncentives=p.weeklyIncentives||{};cutoffLocks=p.cutoffLocks||{};auditLog=p.auditLog||[];employees.forEach(e=>{if(typeof e.active!=='boolean')e.active=true;delete e.workDays;});audit("Backup restored",file.name);saveAll();location.reload();}catch(e){alert('Unable to restore backup: '+e.message);}};reader.readAsText(file);
-}
-function confirmClear(){
-  if(!confirm('This will permanently clear all payroll data in this browser. Continue?'))return;
-  data=[];employees=[];weeklyIncentives={};cutoffLocks={};auditLog=[];saveAll();render();renderEmployees();closeClearModal();
-}
-
-// Use the improved employee modal and keep legacy modal open/close helpers.
-function openEmployeeModal(){renderEmployees();employeeModal.style.display='flex';}
-function closeEmployeeModal(){employeeModal.style.display='none';}
-
-// Remove legacy schedule data from older versions.
-employees.forEach(e=>{delete e.workDays;});
-saveAll();
-
-// Initialize V2 state and UI.
+migrateExistingIncentives();
 render();
 toggleClearBtn();

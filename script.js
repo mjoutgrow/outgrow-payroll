@@ -222,11 +222,48 @@ function clearSearch(){
 
 let employees = JSON.parse(localStorage.getItem("employees")) || [];
 let data = JSON.parse(localStorage.getItem("payrollData")) || [];
+let weeklyIncentives = JSON.parse(localStorage.getItem("weeklyIncentives")) || {};
 let editIndex = null;
+
+function incentiveKey(name, cutoff){
+  return `${name}||${cutoff}`;
+}
+
+function getWeeklyIncentive(name, cutoff){
+  const value = weeklyIncentives[incentiveKey(name, cutoff)];
+  return Number.isFinite(+value) ? Math.max(0, +value) : 0;
+}
+
+function migrateExistingIncentives(){
+  // Keep an already-migrated weekly store intact.
+  if(Object.keys(weeklyIncentives).length > 0) return;
+
+  const migrated = {};
+
+  data.forEach(d => {
+    const cutoff = d.date ? getCutoff(d.date) : "";
+    if(!cutoff || !d.name) return;
+
+    // Older builds may have stored the incentive on each daily record.
+    const legacyValue = d.incentive ?? d.weeklyIncentive ?? d.salaryBonus ?? d.bonus;
+    if(legacyValue === undefined || legacyValue === null || legacyValue === "") return;
+
+    const value = Math.max(0, +legacyValue || 0);
+    const key = incentiveKey(d.name, cutoff);
+
+    // A weekly incentive must only be migrated once per employee/cutoff.
+    // If legacy daily rows duplicated it, keep the highest value instead of multiplying it.
+    migrated[key] = Math.max(migrated[key] || 0, value);
+  });
+
+  weeklyIncentives = migrated;
+  localStorage.setItem("weeklyIncentives", JSON.stringify(weeklyIncentives));
+}
 
 const saveAll = () => {
   localStorage.setItem("employees", JSON.stringify(employees));
   localStorage.setItem("payrollData", JSON.stringify(data));
+  localStorage.setItem("weeklyIncentives", JSON.stringify(weeklyIncentives));
 };
 
 const toEST = (d,t="00:00") => new Date(d + " " + t);
@@ -591,9 +628,12 @@ function getCutoff(date){
 
 function showPayslip(name, cutoff){
 
+  const incentive = getWeeklyIncentive(name, cutoff);
+
   window.currentPayslip = {
     name,
-    cutoff
+    cutoff,
+    incentive
   };
 
   let rows = data
@@ -607,13 +647,10 @@ function showPayslip(name, cutoff){
     ? `$${emp.dollarRate}/hr`
     : `₱${emp.rate}/hr`;
 
-  let th = 0, tb = 0, tm = 0, tl = 0, ts = 0;
-
+  let th = 0, tb = 0, tm = 0, tl = 0, ts = 0, td = 0;
   let tableRows = "";
 
   rows.forEach(r => {
-
-    // 🔥 FIX OLD RECORDS WITH NO SAVED TIME
     let timeInValue = r.timeIn || r.timein || r.inTime || "";
     let timeOutValue = r.timeOut || r.timeout || r.outTime || "";
 
@@ -622,6 +659,7 @@ function showPayslip(name, cutoff){
     tm += +(r.mia || 0);
     tl += +(r.late || 0);
     ts += +(r.salary || 0);
+    td += +(r.dollar || 0);
 
     tableRows += `
       <tr>
@@ -632,69 +670,46 @@ function showPayslip(name, cutoff){
         <td>${minutesToHHMM(r.late)}</td>
         <td>${minutesToHHMM(r.break)}</td>
         <td>${minutesToHHMM(r.mia)}</td>
-        <td>
-          ${isDollar
-            ? '$' + (+r.dollar || 0).toFixed(2)
-            : '₱' + (+r.salary || 0).toFixed(2)}
-        </td>
-      </tr>
-    `;
+        <td>${isDollar ? '$' + (+r.dollar || 0).toFixed(2) : '₱' + (+r.salary || 0).toFixed(2)}</td>
+      </tr>`;
   });
+
+  const basePay = isDollar ? td : ts;
+  const totalPay = basePay + incentive;
+  const money = value => isDollar ? '$' + value.toFixed(2) : '₱' + value.toFixed(2);
 
   let html = `
     <div class="payslip-header">
       <h2>💼 Payslip</h2>
       <div>Outgrow Payroll System</div>
     </div>
-
     <div class="payslip-body">
-
       <div class="payslip-info">
         <div>
           <strong>Employee:</strong> ${name}<br>
           <strong>Rate:</strong> ${rateDisplay}
         </div>
-        <div>
-          <strong>Cutoff:</strong> ${cutoff}
-        </div>
+        <div><strong>Cutoff:</strong> ${cutoff}</div>
       </div>
-
       <table class="payslip-table">
         <tr>
-          <th>Date</th>
-          <th>Time In</th>
-          <th>Time Out</th>
-          <th>Hours</th>
-          <th>Late</th>
-          <th>Break</th>
-          <th>MIA</th>
-          <th>Pay</th>
+          <th>Date</th><th>Time In</th><th>Time Out</th><th>Hours</th>
+          <th>Late</th><th>Break</th><th>MIA</th><th>Pay</th>
         </tr>
         ${tableRows}
       </table>
-
       <div class="payslip-total">
         <div><strong>Total:</strong> ${toHHMM(th)}</div>
-        <div>
-          Break: ${minutesToHHMM(tb)} |
-          MIA: ${minutesToHHMM(tm)} |
-          Late: ${minutesToHHMM(tl)}
-        </div>
-        <div>
-          <strong>Net Pay:</strong>
-          ${isDollar
-            ? '$' + rows.reduce((a,b)=>a+(+b.dollar||0),0).toFixed(2)
-            : '₱' + ts.toFixed(2)}
-        </div>
+        <div>Break: ${minutesToHHMM(tb)} | MIA: ${minutesToHHMM(tm)} | Late: ${minutesToHHMM(tl)}</div>
+        ${incentive > 0 ? `<div><strong>Base Pay:</strong> ${money(basePay)}</div>
+        <div><strong>Incentive:</strong> ${money(incentive)}</div>` : ""}
+        <div><strong>Net Pay:</strong> ${money(totalPay)}</div>
       </div>
-
       <div class="payslip-footer">
         <button onclick="downloadPayslipPNG()">🖼 Save PNG</button>
         <button onclick="payslipModal.style.display='none'">Close</button>
       </div>
-
-    </div>
-  `;
+    </div>`;
 
   payslipContent.innerHTML = html;
   payslipModal.style.display = "flex";
@@ -737,284 +752,111 @@ function toHHMM(val){
 
 /* ================= EXPORT ================= */
 
-function exportCSV(){
-
-  if(data.length === 0){
-    alert("No records available");
-    return;
-  }
-
-  // ✅ Get latest date from records
-  let latestDate = data
-    .map(d => new Date(d.date))
-    .sort((a,b)=>b-a)[0];
-
-  let latestStr =
-    latestDate.getFullYear() + "-" +
-    String(latestDate.getMonth()+1).padStart(2,'0') + "-" +
-    String(latestDate.getDate()).padStart(2,'0');
-
-  let currentCutoff = getCutoff(latestStr);
-
-  let grouped = {};
-
+function buildWeeklyExportRows(cutoff){
+  const grouped = {};
   data.forEach(d => {
-
-    let cutoff = getCutoff(d.date);
-
-    // ✅ ONLY LATEST CUTOFF (not today's)
-    if(cutoff !== currentCutoff) return;
-
-    let key = d.name + cutoff;
-
-    if(!grouped[key]){
-      grouped[key] = {
-        name: d.name,
-        cutoff: cutoff,
-        minutes: 0
-      };
-    }
-
+    if(getCutoff(d.date) !== cutoff) return;
+    const key = incentiveKey(d.name, cutoff);
+    if(!grouped[key]) grouped[key] = {name:d.name, cutoff, minutes:0};
     grouped[key].minutes += +(d.minutes || 0);
   });
+  return Object.values(grouped).sort((a,b)=>a.name.localeCompare(b.name));
+}
 
-  if(Object.keys(grouped).length === 0){
-    alert("No records found for latest cutoff");
-    return;
-  }
+function weeklyCsv(cutoff){
+  const rows = buildWeeklyExportRows(cutoff);
+  if(!rows.length) return "";
 
-  let csv = "Employee,Cutoff,Hours,Peso Pay,Dollar Pay\n";
-
-  Object.values(grouped)
-  .sort((a,b)=>a.name.localeCompare(b.name))
-  .forEach(g=>{
-
-    let emp = employees.find(e => e.name === g.name);
-
-    let hours = g.minutes / 60;
-
-    let h = Math.floor(g.minutes / 60);
-    let m = g.minutes % 60;
-    let hoursFormatted = `${h}:${m.toString().padStart(2,'0')}`;
-
-    let pesoPay = "";
-    let dollarPay = "";
-
-    if(emp){
-      if(emp.rate > 0){
-        pesoPay = (hours * emp.rate).toFixed(2);
-      }
-      if(emp.dollarRate > 0){
-        dollarPay = (hours * emp.dollarRate).toFixed(2);
-      }
-    }
-
-    csv += `${g.name},${g.cutoff},${hoursFormatted},${pesoPay},${dollarPay}\n`;
+  let csv = "Employee,Cutoff,Hours,Peso Pay,Dollar Pay,Incentive,Total Pay\n";
+  rows.forEach(g=>{
+    const emp = employees.find(e => e.name === g.name);
+    const hours = g.minutes / 60;
+    const hoursFormatted = `${Math.floor(g.minutes/60)}:${String(g.minutes%60).padStart(2,'0')}`;
+    const pesoPay = emp && +emp.rate > 0 ? (hours * +emp.rate).toFixed(2) : "";
+    const dollarPay = emp && +emp.dollarRate > 0 ? (hours * +emp.dollarRate).toFixed(2) : "";
+    const incentive = getWeeklyIncentive(g.name, cutoff);
+    const basePay = emp && +emp.dollarRate > 0 ? +dollarPay || 0 : +pesoPay || 0;
+    const totalPay = (basePay + incentive).toFixed(2);
+    csv += [g.name,g.cutoff,hoursFormatted,pesoPay,dollarPay,incentive.toFixed(2),totalPay].map(csvEscape).join(",") + "\n";
   });
+  return csv;
+}
 
-  let a = document.createElement("a");
-  a.href = URL.createObjectURL(
-    new Blob(["\uFEFF"+csv], {type:"text/csv;charset=utf-8;"})
-  );
-
-  // ✅ filename
-  a.download = formatCutoffFilename(currentCutoff);
-
+function exportCSV(){
+  if(data.length === 0){ alert("No records available"); return; }
+  const latestDate = data.map(d=>new Date(d.date)).sort((a,b)=>b-a)[0];
+  const latestStr = latestDate.getFullYear()+"-"+String(latestDate.getMonth()+1).padStart(2,'0')+"-"+String(latestDate.getDate()).padStart(2,'0');
+  const currentCutoff = getCutoff(latestStr);
+  const csv = weeklyCsv(currentCutoff);
+  if(!csv){ alert("No records found for latest cutoff"); return; }
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
+  a.download=formatCutoffFilename(currentCutoff);
   a.click();
 }
 
-
 function exportPreviousCutoffCSV(){
-
-  if(data.length === 0){
-    alert("No records available");
-    return;
-  }
-
-  // Get all unique cutoffs that actually exist in the records.
-  const cutoffs = [...new Set(
-    data
-      .map(d => d.date)
-      .filter(Boolean)
-      .map(d => getCutoff(d))
-  )].sort((a,b) => {
-    return new Date(a.split(" to ")[0]) - new Date(b.split(" to ")[0]);
-  });
-
-  if(cutoffs.length < 2){
-    alert("No previous cutoff available. At least two cutoffs are required.");
-    return;
-  }
-
-  // The existing Export Weekly button exports the latest cutoff.
-  // This button exports the cutoff immediately before it.
-  const previousCutoff = cutoffs[cutoffs.length - 2];
-
-  const grouped = {};
-
-  data.forEach(d => {
-
-    if(getCutoff(d.date) !== previousCutoff) return;
-
-    const key = d.name + previousCutoff;
-
-    if(!grouped[key]){
-      grouped[key] = {
-        name: d.name,
-        cutoff: previousCutoff,
-        minutes: 0
-      };
-    }
-
-    grouped[key].minutes += +(d.minutes || 0);
-  });
-
-  if(Object.keys(grouped).length === 0){
-    alert("No records found for previous cutoff");
-    return;
-  }
-
-  let csv = "Employee,Cutoff,Hours,Peso Pay,Dollar Pay\n";
-
-  Object.values(grouped)
-    .sort((a,b) => a.name.localeCompare(b.name))
-    .forEach(g => {
-
-      const emp = employees.find(e => e.name === g.name);
-
-      const hours = g.minutes / 60;
-      const h = Math.floor(g.minutes / 60);
-      const m = g.minutes % 60;
-      const hoursFormatted = `${h}:${m.toString().padStart(2,'0')}`;
-
-      const pesoPay =
-        emp && +emp.rate > 0
-          ? (hours * +emp.rate).toFixed(2)
-          : "";
-
-      const dollarPay =
-        emp && +emp.dollarRate > 0
-          ? (hours * +emp.dollarRate).toFixed(2)
-          : "";
-
-      csv += [
-        csvEscape(g.name),
-        csvEscape(g.cutoff),
-        csvEscape(hoursFormatted),
-        csvEscape(pesoPay),
-        csvEscape(dollarPay)
-      ].join(",") + "\n";
-    });
-
-  const url = URL.createObjectURL(
-    new Blob(["\uFEFF" + csv], {
-      type:"text/csv;charset=utf-8;"
-    })
-  );
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = formatCutoffFilename(previousCutoff);
+  if(data.length === 0){ alert("No records available"); return; }
+  const cutoffs=[...new Set(data.map(d=>d.date).filter(Boolean).map(getCutoff))].sort((a,b)=>new Date(a.split(" to ")[0])-new Date(b.split(" to ")[0]));
+  if(cutoffs.length < 2){ alert("No previous cutoff available. At least two cutoffs are required."); return; }
+  const previousCutoff=cutoffs[cutoffs.length-2];
+  const csv=weeklyCsv(previousCutoff);
+  if(!csv){ alert("No records found for previous cutoff"); return; }
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
+  a.download=formatCutoffFilename(previousCutoff);
   a.click();
-
-  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function formatCutoffFilename(cutoff){
-  let parts = cutoff.split(" to ");
-  if(parts.length !== 2) return "weekly_cutoff.csv";
-
-  let start = new Date(parts[0]);
-  let end = new Date(parts[1]);
-
-  let month = start.toLocaleString("en-US",{month:"long"});
-  let startDay = start.getDate();
-  let endDay = end.getDate();
-
-  // ✅ ALWAYS use start month only
-  return `${month}_${startDay}-${endDay}_cutoff.csv`;
+  let parts=cutoff.split(" to ");
+  if(parts.length!==2) return "weekly_cutoff.csv";
+  let start=new Date(parts[0]), end=new Date(parts[1]);
+  return `${start.toLocaleString("en-US",{month:"long"})}_${start.getDate()}-${end.getDate()}_cutoff.csv`;
 }
 
 function csvEscape(value){
-  const s = String(value ?? "");
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  const s=String(value ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
 }
 
 function exportMonthlyCSV(){
+  if(data.length===0){ alert("No records available"); return; }
+  const latestDate=data.map(d=>d.date).filter(Boolean).sort().at(-1);
+  if(!latestDate){ alert("No valid dated records available"); return; }
+  const targetMonth=latestDate.slice(0,7), grouped={};
 
-  if(data.length === 0){
-    alert("No records available");
-    return;
-  }
-
-  const latestDate = data
-    .map(d => d.date)
-    .filter(Boolean)
-    .sort()
-    .at(-1);
-
-  if(!latestDate){
-    alert("No valid dated records available");
-    return;
-  }
-
-  const targetMonth = latestDate.slice(0, 7);
-  const grouped = {};
-
-  data.forEach(d => {
-    if(!d.date || d.date.slice(0, 7) !== targetMonth) return;
-
-    const key = `${d.name}__${targetMonth}`;
-
-    if(!grouped[key]){
-      grouped[key] = {
-        name: d.name,
-        month: targetMonth,
-        minutes: 0
-      };
-    }
-
-    grouped[key].minutes += +(d.minutes || 0);
+  data.forEach(d=>{
+    if(!d.date || d.date.slice(0,7)!==targetMonth) return;
+    const key=`${d.name}__${targetMonth}`;
+    if(!grouped[key]) grouped[key]={name:d.name,month:targetMonth,minutes:0,late:0,break:0,mia:0,salary:0,dollar:0,cutoffs:new Set()};
+    grouped[key].minutes += +(d.minutes||0);
+    grouped[key].late += +(d.late||0);
+    grouped[key].break += +(d.break||0);
+    grouped[key].mia += +(d.mia||0);
+    grouped[key].salary += +(d.salary||0);
+    grouped[key].dollar += +(d.dollar||0);
+    grouped[key].cutoffs.add(getCutoff(d.date));
   });
 
-  if(Object.keys(grouped).length === 0){
-    alert("No monthly records found");
-    return;
-  }
+  const rows=Object.values(grouped);
+  if(!rows.length){ alert("No monthly records found"); return; }
 
-  let csv = "Employee,Month,Hours,Peso Pay,Dollar Pay\n";
+  let csv="Employee,Month,Hours,Peso Pay,Dollar Pay,Incentive,Total Pay\n";
+  rows.sort((a,b)=>a.name.localeCompare(b.name)).forEach(g=>{
+    const emp=employees.find(e=>e.name===g.name);
+    const incentive=[...g.cutoffs].reduce((sum,cutoff)=>sum+getWeeklyIncentive(g.name,cutoff),0);
+    const basePay=emp && +emp.dollarRate>0 ? g.dollar : g.salary;
+    const hoursFormatted=`${Math.floor(g.minutes/60)}:${String(Math.round(g.minutes%60)).padStart(2,'0')}`;
+    const pesoPay=emp && +emp.rate>0 ? g.salary.toFixed(2) : "";
+    const dollarPay=emp && +emp.dollarRate>0 ? g.dollar.toFixed(2) : "";
+    csv += [g.name,g.month,hoursFormatted,pesoPay,dollarPay,incentive.toFixed(2),(basePay+incentive).toFixed(2)].map(csvEscape).join(",")+"\n";
+  });
 
-  Object.values(grouped)
-    .sort((a,b) => a.name.localeCompare(b.name))
-    .forEach(g => {
-      const emp = employees.find(e => e.name === g.name);
-      const hours = g.minutes / 60;
-      const h = Math.floor(g.minutes / 60);
-      const m = Math.round(g.minutes % 60);
-      const hoursFormatted = `${h}:${m.toString().padStart(2,'0')}`;
-
-      const pesoPay = emp && +emp.rate > 0 ? (hours * +emp.rate).toFixed(2) : "";
-      const dollarPay = emp && +emp.dollarRate > 0 ? (hours * +emp.dollarRate).toFixed(2) : "";
-
-      csv += [
-        csvEscape(g.name),
-        csvEscape(g.month),
-        csvEscape(hoursFormatted),
-        csvEscape(pesoPay),
-        csvEscape(dollarPay)
-      ].join(",") + "\n";
-    });
-
-  const url = URL.createObjectURL(
-    new Blob(["\uFEFF" + csv], {type:"text/csv;charset=utf-8;"})
-  );
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${targetMonth}_monthly.csv`;
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
+  a.download=`${targetMonth}_monthly.csv`;
   a.click();
-
-  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 /* ================= DOWNLOAD PNG  ================= */
@@ -1055,6 +897,13 @@ function downloadPayslipPNG(){
     element.classList.remove("export-mode");
     if(footer) footer.style.display = "";
   });
+}
+
+function updateWeeklyIncentive(name, cutoff, value){
+  const numeric=Math.max(0, Number(value)||0);
+  weeklyIncentives[incentiveKey(name, cutoff)] = numeric;
+  localStorage.setItem("weeklyIncentives", JSON.stringify(weeklyIncentives));
+  render();
 }
 
 /* ================= RENDER ================= */
@@ -1158,6 +1007,14 @@ function render(){
   /* ================= WEEKLY TABLE ================= */
 
   Object.values(weekly).forEach(w=>{
+    const emp = employees.find(e => e.name === w.name);
+    const incentive = getWeeklyIncentive(w.name, w.cutoff);
+    const isDollar = emp && +emp.dollarRate > 0;
+    const basePay = isDollar ? w.dollar : w.salary;
+    const totalPay = basePay + incentive;
+    const money = value => isDollar ? '$' + value.toFixed(2) : '₱' + value.toFixed(2);
+    const nameArg = JSON.stringify(w.name).replace(/</g,"\u003c");
+    const cutoffArg = JSON.stringify(w.cutoff);
 
     summaryBody.innerHTML += `
       <tr>
@@ -1169,18 +1026,31 @@ function render(){
         <td>${w.mia} min</td>
         <td>${w.salary > 0 ? '₱' + w.salary.toFixed(2) : '-'}</td>
         <td>${w.dollar > 0 ? '$' + w.dollar.toFixed(2) : '-'}</td>
-        <td>
-          <button onclick="showPayslip('${w.name}','${w.cutoff}')">
-            Payslip
-          </button>
+        <td style="min-width:150px;">
+          <input type="number" min="0" step="0.01"
+            value="${incentive ? incentive.toFixed(2) : ''}"
+            placeholder="0.00"
+            title="Weekly incentive"
+            onchange='updateWeeklyIncentive(${nameArg},${cutoffArg},this.value)'
+            onkeydown="if(event.key==='Enter'){this.blur();}">
         </td>
-      </tr>
-    `;
+        <td><strong>${money(totalPay)}</strong></td>
+        <td>
+          <button onclick='showPayslip(${nameArg},${cutoffArg})'>Payslip</button>
+        </td>
+      </tr>`;
   });
 
   /* ================= MONTHLY TABLE ================= */
 
   Object.values(monthly).forEach(m=>{
+    const emp = employees.find(e => e.name === m.name);
+    const cutoffs = [...new Set(data.filter(d => d.name === m.name && d.date.slice(0,7) === m.month).map(d => getCutoff(d.date)))];
+    const incentive = cutoffs.reduce((sum, cutoff) => sum + getWeeklyIncentive(m.name, cutoff), 0);
+    const isDollar = emp && +emp.dollarRate > 0;
+    const basePay = isDollar ? m.dollar : m.salary;
+    const totalPay = basePay + incentive;
+    const money = value => isDollar ? '$' + value.toFixed(2) : '₱' + value.toFixed(2);
 
     monthlyBody.innerHTML += `
       <tr>
@@ -1192,8 +1062,9 @@ function render(){
         <td>${m.mia} min</td>
         <td>${m.salary > 0 ? '₱' + m.salary.toFixed(2) : '-'}</td>
         <td>${m.dollar > 0 ? '$' + m.dollar.toFixed(2) : '-'}</td>
-      </tr>
-    `;
+        <td>${incentive > 0 ? money(incentive) : '-'}</td>
+        <td><strong>${money(totalPay)}</strong></td>
+      </tr>`;
   });
 
 }
@@ -1303,5 +1174,6 @@ document.addEventListener("keydown", function(e){
   }
 });
 
+migrateExistingIncentives();
 render();
 toggleClearBtn();

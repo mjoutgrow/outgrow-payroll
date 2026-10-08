@@ -6,20 +6,35 @@
 <title>Outgrow Payroll System</title>
 <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <div class="header">💼 Outgrow Payroll System 📊</div>
-
 <div class="container">
 
-<div class="card">
+<div class="card action-bar">
 <button class="btn-primary" onclick="openAddModal()">➕ Add Record</button>
 <button class="btn-secondary" onclick="openEmployeeModal()">👥 Employees</button>
 <button class="btn-secondary" onclick="exportCSV()">📤 Latest Cutoff CSV</button>
 <button class="btn-secondary" onclick="exportPreviousCutoffCSV()">⏮️ Previous Cutoff CSV</button>
 <button class="btn-secondary" onclick="exportMonthlyCSV()">📅 Export Monthly</button>
+<button class="btn-secondary" onclick="backupPayroll()">💾 Backup</button>
+<button class="btn-secondary" onclick="restorePayroll()">📥 Restore</button>
+<button class="btn-secondary" onclick="openAuditModal()">📝 Audit Log</button>
 <button class="btn-danger" onclick="openClearModal()">🗑️ Clear All</button>
+<input type="file" id="restoreFile" accept="application/json" style="display:none" onchange="handleRestoreFile(event)">
+</div>
+
+<div class="dashboard-grid">
+  <div class="stat-card"><div class="stat-label">👥 Active Employees</div><div class="stat-value" id="dashEmployees">0</div></div>
+  <div class="stat-card"><div class="stat-label">💰 Current Payroll</div><div class="stat-value" id="dashPayroll">-</div></div>
+  <div class="stat-card"><div class="stat-label">🎁 Incentives</div><div class="stat-value" id="dashIncentives">-</div></div>
+  <div class="stat-card"><div class="stat-label">⏱ Total Hours</div><div class="stat-value" id="dashHours">0h 0m</div></div>
+  <div class="stat-card"><div class="stat-label">⚠️ Attendance Gaps</div><div class="stat-value" id="dashGaps">0</div></div>
+  <div class="stat-card"><div class="stat-label">🔒 Locked Cutoffs</div><div class="stat-value" id="dashLocked">0</div></div>
+</div>
+
+<div class="card workflow-card">
+  <h3>🔄 Payroll Workflow</h3>
+  <div class="workflow"><span>Daily Records</span><b>→</b><span>Weekly Review</span><b>→</b><span>Incentives</span><b>→</b><span>🔒 Finalize</span><b>→</b><span>Payslip / CSV</span><b>→</b><span>Monthly Report</span></div>
 </div>
 
 <div class="search-box">
@@ -27,109 +42,72 @@
   <span id="clearBtn" onclick="clearSearch()">✖</span>
 </div>
 
+<div class="card filter-card">
+  <div class="filter-grid">
+    <select id="cutoffFilter" onchange="render()"><option value="">All Cutoffs</option></select>
+    <select id="monthFilter" onchange="render()"><option value="">All Months</option></select>
+    <select id="statusFilter" onchange="render()">
+      <option value="">All Status</option><option value="complete">Complete</option><option value="gaps">Attendance Gaps</option>
+      <option value="incentive">With Incentive</option><option value="no-incentive">No Incentive</option><option value="locked">Locked</option>
+    </select>
+    <button class="btn-secondary" onclick="clearFilters()">↺ Clear Filters</button>
+  </div>
+</div>
+
 <div class="card">
 <h3>📋 Records</h3>
-<table>
-<tr>
-<th>Name</th><th>Date</th><th>Hours</th><th>Late</th><th>Break</th><th>MIA</th><th>Salary</th><th>$</th><th>Action</th>
-</tr>
+<div class="table-wrapper"><table>
+<tr><th>Name</th><th>Date</th><th>Hours</th><th>Late</th><th>Break</th><th>MIA</th><th>Salary</th><th>$</th><th>Status</th><th>Action</th></tr>
 <tbody id="tbody"></tbody>
-</table>
+</table></div>
 </div>
 
 <div class="card">
 <h3>📊 Weekly Summary</h3>
-<table>
-<tr>
-<th>Employee</th><th>Cutoff</th><th>Hours</th><th>Late</th><th>Break</th><th>MIA</th><th>Salary</th><th>$</th><th>Incentive</th><th>Total Pay</th><th>Action</th>
-</tr>
+<div class="table-wrapper"><table>
+<tr><th>Employee</th><th>Cutoff</th><th>Hours</th><th>Late</th><th>Break</th><th>MIA</th><th>Salary</th><th>$</th><th>Incentive</th><th>Total Pay</th><th>Action</th></tr>
 <tbody id="summaryBody"></tbody>
-</table>
+</table></div>
 </div>
 
 <div class="card">
 <h3>📆 Monthly Report</h3>
-<table>
-<tr>
-<th>Employee</th><th>Month</th><th>Hours</th><th>Late</th><th>Break</th><th>MIA</th><th>Salary</th><th>$</th><th>Incentive</th><th>Total Pay</th>
-</tr>
+<div class="table-wrapper"><table>
+<tr><th>Employee</th><th>Month</th><th>Hours</th><th>Late</th><th>Break</th><th>MIA</th><th>Salary</th><th>$</th><th>Incentive</th><th>Total Pay</th></tr>
 <tbody id="monthlyBody"></tbody>
-</table>
+</table></div>
 </div>
 </div>
 
 <div class="modal" id="employeeModal"><div class="modal-box">
-<h3>Employees</h3>
-<input id="empName" placeholder="Name">
-<input id="empRate" type="number" placeholder="₱ Rate/hr">
-<input id="empDollarRate" type="number" placeholder="$ Rate/hr">
+<h3>👥 Employees</h3>
+<input id="empName" placeholder="Name"><input id="empRate" type="number" placeholder="₱ Rate/hr"><input id="empDollarRate" type="number" placeholder="$ Rate/hr">
 <button onclick="addEmployee()">Add</button>
-<div id="empList"></div>
-<button onclick="closeEmployeeModal()">Close</button>
+<div id="empList"></div><button onclick="closeEmployeeModal()">Close</button>
 </div></div>
 
-<div class="modal" id="addModal">
-<div class="modal-box" style="max-width:900px;">
+<div class="modal" id="historyModal"><div class="modal-box history-box"><div id="historyContent"></div><button onclick="historyModal.style.display='none'">Close</button></div></div>
 
-<h3>➕ Add Multiple Records</h3>
+<div class="modal" id="auditModal"><div class="modal-box history-box"><h3>📝 Audit Log</h3><div id="auditContent"></div><button onclick="auditModal.style.display='none'">Close</button></div></div>
 
-<label><strong>Employee</strong></label>
-<select id="employeeSelect"></select>
-
-<hr style="margin:15px 0;">
-
-<div id="recordContainer"></div>
-
-<button type="button" class="btn-secondary" onclick="addRecordRow()">
-➕ Add Another Date
-</button>
-
-<hr style="margin:15px 0;">
-
-<button class="btn-primary" onclick="addMultipleRecords()">
-💾 Save All Records
-</button>
-
-<button class="btn-danger" onclick="closeAddModal()">
-Cancel
-</button>
-
-</div>
-</div>
+<div class="modal" id="addModal"><div class="modal-box" style="max-width:900px;">
+<h3>➕ Add Multiple Records</h3><label><strong>Employee</strong></label><select id="employeeSelect"></select><hr style="margin:15px 0;"><div id="recordContainer"></div>
+<button type="button" class="btn-secondary" onclick="addRecordRow()">➕ Add Another Date</button><hr style="margin:15px 0;">
+<button class="btn-primary" onclick="addMultipleRecords()">💾 Save All Records</button><button class="btn-danger" onclick="closeAddModal()">Cancel</button>
+</div></div>
 
 <div class="modal" id="editModal"><div class="modal-box">
-
-<h3>✏️ Edit Record</h3>
-<label><strong>Employee:</strong></label>
-<input type="text" id="editName" disabled>
-<label><strong>Date:</strong></label>
-<input type="date" id="editDate" disabled>
-<label><strong>Time In:</strong></label>
-<input type="text" id="editTimeIn" placeholder="Time In"
-onblur="autoFormatTime(this)" onpaste="handlePaste(event,this)">
-
-<input type="text" id="editTimeOut" placeholder="Time Out"
-onblur="autoFormatTime(this)" onpaste="handlePaste(event,this)">
-<input type="number" id="editLate" step="1" min="0" placeholder="Late (minutes)">
-<input type="number" id="editBreak" step="1" min="0" placeholder="Break (minutes)">
-<input type="number" id="editMia" step="1" min="0" placeholder="MIA (minutes)">
-<button onclick="saveEdit()">Save</button>
-<button onclick="closeEditModal()">Cancel</button>
+<h3>✏️ Edit Record</h3><label><strong>Employee:</strong></label><input type="text" id="editName" disabled><label><strong>Date:</strong></label><input type="date" id="editDate" disabled>
+<label><strong>Time In:</strong></label><input type="text" id="editTimeIn" placeholder="Time In" onblur="autoFormatTime(this)" onpaste="handlePaste(event,this)">
+<input type="text" id="editTimeOut" placeholder="Time Out" onblur="autoFormatTime(this)" onpaste="handlePaste(event,this)">
+<input type="number" id="editLate" step="1" min="0" placeholder="Late (minutes)"><input type="number" id="editBreak" step="1" min="0" placeholder="Break (minutes)"><input type="number" id="editMia" step="1" min="0" placeholder="MIA (minutes)">
+<button onclick="saveEdit()">Save</button><button onclick="closeEditModal()">Cancel</button>
 </div></div>
 
-<div class="modal" id="payslipModal">
-<div class="modal-box payslip-box">
-<div id="payslipContent"></div>
-</div>
-</div>
+<div class="modal" id="payslipModal"><div class="modal-box payslip-box"><div id="payslipContent"></div></div></div>
 
-<div class="modal" id="clearModal"><div class="modal-box">
-<h3>⚠️ Clear All Data?</h3>
-<button onclick="confirmClear()">Yes</button>
-<button onclick="closeClearModal()">Cancel</button>
-</div></div>
+<div class="modal" id="clearModal"><div class="modal-box"><h3>⚠️ Clear All Data?</h3><p>This clears payroll records, employees, incentives, locks and audit history from this browser.</p><button onclick="confirmClear()">Yes</button><button onclick="closeClearModal()">Cancel</button></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="script.js"></script>
-</body>
-</html>
+</body></html>

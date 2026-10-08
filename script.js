@@ -220,8 +220,13 @@ function clearSearch(){
   render();
 }
 
+const DEFAULT_WORK_DAYS = [1,2,3,4,5]; // Monday-Friday
+const DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 let employees = JSON.parse(localStorage.getItem("employees")) || [];
 let data = JSON.parse(localStorage.getItem("payrollData")) || [];
+employees.forEach(e => {
+  if(!Array.isArray(e.workDays) || !e.workDays.length) e.workDays = [...DEFAULT_WORK_DAYS];
+});
 let weeklyIncentives = JSON.parse(localStorage.getItem("weeklyIncentives")) || {};
 let editIndex = null;
 
@@ -1220,16 +1225,24 @@ function cutoffDates(cutoff){
   const [a,b]=cutoff.split(" to "); if(!a||!b) return [];
   const start=new Date(a+"T00:00:00"), end=new Date(b+"T00:00:00"), out=[];
   for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
-    const day=d.getDay(); if(day!==0 && day!==6) out.push(d.toISOString().slice(0,10));
+    out.push(d.toISOString().slice(0,10));
   }
   return out;
+}
+function getEmployeeWorkDays(name){
+  const emp=employees.find(e=>e.name===name);
+  return (emp && Array.isArray(emp.workDays) && emp.workDays.length) ? emp.workDays.map(Number) : [...DEFAULT_WORK_DAYS];
 }
 function attendanceGaps(name, cutoff){
   const rows=data.filter(d=>d.name===name && getCutoff(d.date)===cutoff && d.date);
   if(rows.length<2) return [];
   const dates=rows.map(d=>d.date).sort();
   const start=dates[0], end=dates[dates.length-1];
-  const expected=cutoffDates(cutoff).filter(x=>x>=start && x<=end);
+  const allowedDays=new Set(getEmployeeWorkDays(name));
+  const expected=cutoffDates(cutoff).filter(x=>{
+    const day=new Date(x+"T00:00:00").getDay();
+    return x>=start && x<=end && allowedDays.has(day);
+  });
   const worked=new Set(dates);
   return expected.filter(x=>!worked.has(x));
 }
@@ -1396,7 +1409,7 @@ function addMultipleRecords(){
 function addEmployee(){
   const name=empName.value.trim(); if(!name)return;
   if(employees.some(e=>e.name.toLowerCase()===name.toLowerCase())){alert("Employee already exists.");return;}
-  employees.push({name,rate:+empRate.value||0,dollarRate:+empDollarRate.value||0,active:true});
+  employees.push({name,rate:+empRate.value||0,dollarRate:+empDollarRate.value||0,active:true,workDays:[...DEFAULT_WORK_DAYS]});
   audit("Employee added",name); saveAll(); renderEmployees(); render(); empName.value="";empRate.value="";empDollarRate.value="";
 }
 function editEmployee(i){
@@ -1409,12 +1422,25 @@ function editEmployee(i){
   Object.keys(weeklyIncentives).forEach(k=>{if(k.startsWith(old+"||")){const c=k.slice((old+"||").length);weeklyIncentives[incentiveKey(e.name,c)]=weeklyIncentives[k];delete weeklyIncentives[k];}});
   audit("Employee updated",`${old} → ${e.name}`);saveAll();renderEmployees();render();
 }
+function editEmployeeSchedule(i){
+  const e=employees[i]; if(!e)return;
+  const current=getEmployeeWorkDays(e.name).map(d=>DAY_NAMES[d]).join(', ');
+  const answer=prompt('Enter the employee work days separated by commas. Example: Mon,Tue,Wed,Thu,Fri', current);
+  if(answer===null)return;
+  const tokens=answer.split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
+  const map={sun:0,sunday:0,mon:1,monday:1,tue:2,tues:2,tuesday:2,wed:3,wednesday:3,thu:4,thur:4,thurs:4,thursday:4,fri:5,friday:5,sat:6,saturday:6};
+  const days=[...new Set(tokens.map(x=>map[x]).filter(x=>x!==undefined))].sort((a,b)=>a-b);
+  if(!days.length){alert('Please enter at least one valid day.');return;}
+  e.workDays=days;
+  audit('Employee schedule updated',`${e.name} • ${days.map(d=>DAY_NAMES[d]).join(', ')}`);
+  saveAll(); renderEmployees(); render();
+}
 function toggleEmployeeActive(i){
   const e=employees[i]; if(!e)return; e.active=e.active===false; audit(e.active?"Employee activated":"Employee deactivated",e.name); saveAll(); renderEmployees(); render();
 }
 function deleteEmployee(i){toggleEmployeeActive(i);}
 function renderEmployees(){
-  empList.innerHTML=employees.map((e,i)=>`<div class="employee-row ${e.active===false?'inactive':''}"><strong>${escapeHtml(e.name)}</strong> ${e.active===false?'<span class="status-pill">Inactive</span>':'<span class="status-pill status-ok">Active</span>'}<div class="small-muted">₱${(+e.rate||0).toFixed(2)}/hr ${+e.dollarRate>0?'• $'+(+e.dollarRate).toFixed(2)+'/hr':''}</div><div class="employee-actions"><button onclick="editEmployee(${i})">Edit</button><button onclick="toggleEmployeeActive(${i})">${e.active===false?'Activate':'Deactivate'}</button><button onclick='showEmployeeHistory(${jsArg(e.name)})'>History</button></div></div>`).join('');
+  empList.innerHTML=employees.map((e,i)=>`<div class="employee-row ${e.active===false?'inactive':''}"><strong>${escapeHtml(e.name)}</strong> ${e.active===false?'<span class="status-pill">Inactive</span>':'<span class="status-pill status-ok">Active</span>'}<div class="small-muted">₱${(+e.rate||0).toFixed(2)}/hr ${+e.dollarRate>0?'• $'+(+e.dollarRate).toFixed(2)+'/hr':''}</div><div class="small-muted">Schedule: ${getEmployeeWorkDays(e.name).map(d=>DAY_NAMES[d]).join(', ')}</div><div class="employee-actions"><button onclick="editEmployee(${i})">Edit</button><button onclick="editEmployeeSchedule(${i})">Schedule</button><button onclick="toggleEmployeeActive(${i})">${e.active===false?'Activate':'Deactivate'}</button><button onclick='showEmployeeHistory(${jsArg(e.name)})'>History</button></div></div>`).join('');
 }
 function openAddModal(){
   const active=employees.filter(e=>e.active!==false); if(!active.length){alert("Please add or activate an employee first.");return;}
@@ -1441,7 +1467,7 @@ function backupPayroll(){
 function restorePayroll(){restoreFile.value='';restoreFile.click();}
 function handleRestoreFile(event){
   const file=event.target.files?.[0]; if(!file)return; const reader=new FileReader();
-  reader.onload=()=>{try{const p=JSON.parse(reader.result);if(!Array.isArray(p.employees)||!Array.isArray(p.data))throw new Error('Invalid backup');if(!confirm('Restore this payroll backup? Current browser data will be replaced.'))return;employees=p.employees;data=p.data;weeklyIncentives=p.weeklyIncentives||{};cutoffLocks=p.cutoffLocks||{};auditLog=p.auditLog||[];employees.forEach(e=>{if(typeof e.active!=='boolean')e.active=true;});audit("Backup restored",file.name);saveAll();location.reload();}catch(e){alert('Unable to restore backup: '+e.message);}};reader.readAsText(file);
+  reader.onload=()=>{try{const p=JSON.parse(reader.result);if(!Array.isArray(p.employees)||!Array.isArray(p.data))throw new Error('Invalid backup');if(!confirm('Restore this payroll backup? Current browser data will be replaced.'))return;employees=p.employees;data=p.data;weeklyIncentives=p.weeklyIncentives||{};cutoffLocks=p.cutoffLocks||{};auditLog=p.auditLog||[];employees.forEach(e=>{if(typeof e.active!=='boolean')e.active=true;if(!Array.isArray(e.workDays)||!e.workDays.length)e.workDays=[...DEFAULT_WORK_DAYS];});audit("Backup restored",file.name);saveAll();location.reload();}catch(e){alert('Unable to restore backup: '+e.message);}};reader.readAsText(file);
 }
 function confirmClear(){
   if(!confirm('This will permanently clear all payroll data in this browser. Continue?'))return;
@@ -1451,6 +1477,10 @@ function confirmClear(){
 // Use the improved employee modal and keep legacy modal open/close helpers.
 function openEmployeeModal(){renderEmployees();employeeModal.style.display='flex';}
 function closeEmployeeModal(){employeeModal.style.display='none';}
+
+// Ensure older employee records have a default schedule.
+employees.forEach(e=>{if(!Array.isArray(e.workDays)||!e.workDays.length)e.workDays=[...DEFAULT_WORK_DAYS];});
+saveAll();
 
 // Initialize V2 state and UI.
 render();

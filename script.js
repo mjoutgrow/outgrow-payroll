@@ -220,13 +220,8 @@ function clearSearch(){
   render();
 }
 
-const DEFAULT_WORK_DAYS = [1,2,3,4,5]; // Monday-Friday
-const DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 let employees = JSON.parse(localStorage.getItem("employees")) || [];
 let data = JSON.parse(localStorage.getItem("payrollData")) || [];
-employees.forEach(e => {
-  if(!Array.isArray(e.workDays) || !e.workDays.length) e.workDays = [...DEFAULT_WORK_DAYS];
-});
 let weeklyIncentives = JSON.parse(localStorage.getItem("weeklyIncentives")) || {};
 let editIndex = null;
 
@@ -1229,39 +1224,10 @@ function cutoffDates(cutoff){
   }
   return out;
 }
-function getEmployeeWorkDays(name){
-  const emp=employees.find(e=>e.name===name);
-  return (emp && Array.isArray(emp.workDays) && emp.workDays.length) ? emp.workDays.map(Number) : [...DEFAULT_WORK_DAYS];
-}
-function attendanceGaps(name, cutoff){
-  const rows=data.filter(d=>d.name===name && getCutoff(d.date)===cutoff && d.date);
-  if(rows.length<2) return [];
-  const dates=rows.map(d=>d.date).sort();
-  const start=dates[0], end=dates[dates.length-1];
-  const allowedDays=new Set(getEmployeeWorkDays(name));
-  const expected=cutoffDates(cutoff).filter(x=>{
-    const day=new Date(x+"T00:00:00").getDay();
-    return x>=start && x<=end && allowedDays.has(day);
-  });
-  const worked=new Set(dates);
-  return expected.filter(x=>!worked.has(x));
-}
-function employeeHasGap(name, cutoff){return attendanceGaps(name,cutoff).length>0;}
-function allCutoffGroups(){
-  const groups={};
-  data.forEach(d=>{
-    const c=getCutoff(d.date); if(!c) return;
-    const k=d.name+"||"+c;
-    if(!groups[k]) groups[k]={name:d.name,cutoff:c,minutes:0,late:0,break:0,mia:0,salary:0,dollar:0};
-    groups[k].minutes += +(d.minutes||0); groups[k].late += +(d.late||0); groups[k].break += +(d.break||0); groups[k].mia += +(d.mia||0); groups[k].salary += +(d.salary||0); groups[k].dollar += +(d.dollar||0);
-  });
-  return Object.values(groups);
-}
 function groupStatus(w){
   const incentive=getWeeklyIncentive(w.name,w.cutoff);
   if(isCutoffLocked(w.cutoff)) return "locked";
   if(incentive>0) return "incentive";
-  if(employeeHasGap(w.name,w.cutoff)) return "gaps";
   return "complete";
 }
 function passesFilters(name, month, cutoff){
@@ -1288,7 +1254,7 @@ function passesMonthlyFilters(m){
   return true;
 }
 function statusBadge(status){
-  const map={complete:["Complete","status-ok"],gaps:["⚠️ Gap","status-warn"],incentive:["🎁 Incentive","status-incentive"],locked:["🔒 Locked","status-lock"]};
+  const map={complete:["Complete","status-ok"],incentive:["🎁 Incentive","status-incentive"],locked:["🔒 Locked","status-lock"]};
   const [label,cls]=map[status]||[status,"status-pill"];
   return `<span class="status-pill ${cls}">${label}</span>`;
 }
@@ -1300,20 +1266,19 @@ function renderDashboard(weekly){
   const active=employees.filter(e=>e.active!==false).length;
   const groups=Object.values(weekly);
   const latest=groups.slice().sort((a,b)=>new Date(b.cutoff.split(" to ")[0])-new Date(a.cutoff.split(" to ")[0]))[0];
-  let pesoPayroll=0,dollarPayroll=0,pesoInc=0,dollarInc=0,hours=0,gaps=0;
+  let pesoPayroll=0,dollarPayroll=0,pesoInc=0,dollarInc=0,hours=0;
   if(latest){
     groups.filter(w=>w.cutoff===latest.cutoff).forEach(w=>{
       const emp=employees.find(e=>e.name===w.name), inc=getWeeklyIncentive(w.name,w.cutoff);
       if(emp&&+emp.dollarRate>0){ dollarPayroll+=w.dollar+inc; dollarInc+=inc; }
       else { pesoPayroll+=w.salary+inc; pesoInc+=inc; }
-      hours+=w.minutes; if(employeeHasGap(w.name,w.cutoff)) gaps++;
+      hours+=w.minutes;
     });
   }
   dashEmployees.textContent=active;
   dashPayroll.textContent=latest?`₱${pesoPayroll.toFixed(2)}${dollarPayroll>0?` / $${dollarPayroll.toFixed(2)}`:""}`:"-";
   dashIncentives.textContent=latest?`₱${pesoInc.toFixed(2)}${dollarInc>0?` / $${dollarInc.toFixed(2)}`:""}`:"-";
   dashHours.textContent=formatDuration(hours);
-  dashGaps.textContent=gaps;
   dashLocked.textContent=Object.keys(cutoffLocks).filter(k=>cutoffLocks[k]).length;
 }
 function render(){
@@ -1338,13 +1303,13 @@ function render(){
 
   data.map((item,index)=>({item,index})).filter(x=>passesFilters(x.item.name,(x.item.date||"").slice(0,7),getCutoff(x.item.date))).slice(0,20).forEach(({item:d,index:i})=>{
     const locked=isCutoffLocked(getCutoff(d.date));
-    tbody.innerHTML+=`<tr><td>${escapeHtml(d.name)}</td><td>${d.date}</td><td>${formatDuration(d.minutes)}</td><td>${d.late} min</td><td>${d.break} min</td><td>${d.mia} min</td><td>${(+d.salary||0)>0?'₱'+(+d.salary).toFixed(2):'-'}</td><td>${(+d.dollar||0)>0?'$'+(+d.dollar).toFixed(2):'-'}</td><td>${locked?statusBadge('locked'):statusBadge(employeeHasGap(d.name,getCutoff(d.date))?'gaps':'complete')}</td><td>${locked?'<span class="small-muted">Locked</span>':`<button onclick="openEdit(${i})">Edit</button><button onclick="deleteRecord(${i})">Delete</button>`}</td></tr>`;
+    tbody.innerHTML+=`<tr><td>${escapeHtml(d.name)}</td><td>${d.date}</td><td>${formatDuration(d.minutes)}</td><td>${d.late} min</td><td>${d.break} min</td><td>${d.mia} min</td><td>${(+d.salary||0)>0?'₱'+(+d.salary).toFixed(2):'-'}</td><td>${(+d.dollar||0)>0?'$'+(+d.dollar).toFixed(2):'-'}</td><td>${locked?statusBadge('locked'):statusBadge('complete')}</td><td>${locked?'<span class="small-muted">Locked</span>':`<button onclick="openEdit(${i})">Edit</button><button onclick="deleteRecord(${i})">Delete</button>`}</td></tr>`;
   });
 
   weekly.filter(w=>passesFilters(w.name,w.cutoff.split(" to ")[0].slice(0,7),w.cutoff)).forEach(w=>{
-    const emp=employees.find(e=>e.name===w.name), inc=getWeeklyIncentive(w.name,w.cutoff), isDollar=emp&&+emp.dollarRate>0, base=isDollar?w.dollar:w.salary,total=base+inc, locked=isCutoffLocked(w.cutoff), gaps=attendanceGaps(w.name,w.cutoff), stat=groupStatus(w);
+    const emp=employees.find(e=>e.name===w.name), inc=getWeeklyIncentive(w.name,w.cutoff), isDollar=emp&&+emp.dollarRate>0, base=isDollar?w.dollar:w.salary,total=base+inc, locked=isCutoffLocked(w.cutoff), stat=groupStatus(w);
     const money=v=>isDollar?'$'+v.toFixed(2):'₱'+v.toFixed(2), nameArg=jsArg(w.name), cutoffArg=jsArg(w.cutoff);
-    const gapText=gaps.length?`<div class="small-muted">Missing: ${gaps.join(", ")}</div>`:"";
+    const gapText="";
     summaryBody.innerHTML+=`<tr><td>${escapeHtml(w.name)}</td><td>${escapeHtml(w.cutoff)} ${locked?statusBadge('locked'):''}${gapText}</td><td>${formatDuration(w.minutes)}</td><td>${w.late} min</td><td>${w.break} min</td><td>${w.mia} min</td><td>${w.salary>0?'₱'+w.salary.toFixed(2):'-'}</td><td>${w.dollar>0?'$'+w.dollar.toFixed(2):'-'}</td><td><input type="number" min="0" step="0.01" value="${inc?inc.toFixed(2):''}" placeholder="0.00" ${locked?'disabled':''} onchange='updateWeeklyIncentive(${nameArg},${cutoffArg},this.value)' onkeydown="if(event.key==='Enter')this.blur();"></td><td><strong>${money(total)}</strong></td><td><button onclick='showPayslip(${nameArg},${cutoffArg})'>Payslip</button><button class="${locked?'btn-success':'btn-lock'}" onclick='toggleCutoffLock(${cutoffArg})'>${locked?'🔓 Unlock':'🔒 Lock'}</button></td></tr>`;
   });
 
@@ -1409,7 +1374,7 @@ function addMultipleRecords(){
 function addEmployee(){
   const name=empName.value.trim(); if(!name)return;
   if(employees.some(e=>e.name.toLowerCase()===name.toLowerCase())){alert("Employee already exists.");return;}
-  employees.push({name,rate:+empRate.value||0,dollarRate:+empDollarRate.value||0,active:true,workDays:[...DEFAULT_WORK_DAYS]});
+  employees.push({name,rate:+empRate.value||0,dollarRate:+empDollarRate.value||0,active:true});
   audit("Employee added",name); saveAll(); renderEmployees(); render(); empName.value="";empRate.value="";empDollarRate.value="";
 }
 function editEmployee(i){
@@ -1422,25 +1387,12 @@ function editEmployee(i){
   Object.keys(weeklyIncentives).forEach(k=>{if(k.startsWith(old+"||")){const c=k.slice((old+"||").length);weeklyIncentives[incentiveKey(e.name,c)]=weeklyIncentives[k];delete weeklyIncentives[k];}});
   audit("Employee updated",`${old} → ${e.name}`);saveAll();renderEmployees();render();
 }
-function editEmployeeSchedule(i){
-  const e=employees[i]; if(!e)return;
-  const current=getEmployeeWorkDays(e.name).map(d=>DAY_NAMES[d]).join(', ');
-  const answer=prompt('Enter the employee work days separated by commas. Example: Mon,Tue,Wed,Thu,Fri', current);
-  if(answer===null)return;
-  const tokens=answer.split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
-  const map={sun:0,sunday:0,mon:1,monday:1,tue:2,tues:2,tuesday:2,wed:3,wednesday:3,thu:4,thur:4,thurs:4,thursday:4,fri:5,friday:5,sat:6,saturday:6};
-  const days=[...new Set(tokens.map(x=>map[x]).filter(x=>x!==undefined))].sort((a,b)=>a-b);
-  if(!days.length){alert('Please enter at least one valid day.');return;}
-  e.workDays=days;
-  audit('Employee schedule updated',`${e.name} • ${days.map(d=>DAY_NAMES[d]).join(', ')}`);
-  saveAll(); renderEmployees(); render();
-}
 function toggleEmployeeActive(i){
   const e=employees[i]; if(!e)return; e.active=e.active===false; audit(e.active?"Employee activated":"Employee deactivated",e.name); saveAll(); renderEmployees(); render();
 }
 function deleteEmployee(i){toggleEmployeeActive(i);}
 function renderEmployees(){
-  empList.innerHTML=employees.map((e,i)=>`<div class="employee-row ${e.active===false?'inactive':''}"><strong>${escapeHtml(e.name)}</strong> ${e.active===false?'<span class="status-pill">Inactive</span>':'<span class="status-pill status-ok">Active</span>'}<div class="small-muted">₱${(+e.rate||0).toFixed(2)}/hr ${+e.dollarRate>0?'• $'+(+e.dollarRate).toFixed(2)+'/hr':''}</div><div class="small-muted">Schedule: ${getEmployeeWorkDays(e.name).map(d=>DAY_NAMES[d]).join(', ')}</div><div class="employee-actions"><button onclick="editEmployee(${i})">Edit</button><button onclick="editEmployeeSchedule(${i})">Schedule</button><button onclick="toggleEmployeeActive(${i})">${e.active===false?'Activate':'Deactivate'}</button><button onclick='showEmployeeHistory(${jsArg(e.name)})'>History</button></div></div>`).join('');
+  empList.innerHTML=employees.map((e,i)=>`<div class="employee-row ${e.active===false?'inactive':''}"><strong>${escapeHtml(e.name)}</strong> ${e.active===false?'<span class="status-pill">Inactive</span>':'<span class="status-pill status-ok">Active</span>'}<div class="small-muted">₱${(+e.rate||0).toFixed(2)}/hr ${+e.dollarRate>0?'• $'+(+e.dollarRate).toFixed(2)+'/hr':''}</div><div class="employee-actions"><button onclick="editEmployee(${i})">Edit</button><button onclick="toggleEmployeeActive(${i})">${e.active===false?'Activate':'Deactivate'}</button><button onclick='showEmployeeHistory(${jsArg(e.name)})'>History</button></div></div>`).join('');
 }
 function openAddModal(){
   const active=employees.filter(e=>e.active!==false); if(!active.length){alert("Please add or activate an employee first.");return;}
@@ -1453,7 +1405,7 @@ function showEmployeeHistory(name){
   const emp=employees.find(e=>e.name===name), groups=allCutoffGroups().filter(w=>w.name===name).sort((a,b)=>new Date(b.cutoff.split(' to ')[0])-new Date(a.cutoff.split(' to ')[0]));
   const isDollar=emp&&+emp.dollarRate>0; const money=v=>isDollar?'$'+v.toFixed(2):'₱'+v.toFixed(2);
   let total=0; groups.forEach(w=>{total+=(isDollar?w.dollar:w.salary)+getWeeklyIncentive(name,w.cutoff);});
-  historyContent.innerHTML=`<h3>👤 ${escapeHtml(name)} — Payroll History</h3><div class="small-muted">Lifetime payroll shown from saved records.</div><table class="history-table"><tr><th>Cutoff</th><th>Hours</th><th>Base Pay</th><th>Incentive</th><th>Total</th><th>Status</th></tr>${groups.map(w=>{const base=isDollar?w.dollar:w.salary,inc=getWeeklyIncentive(name,w.cutoff);return `<tr><td>${w.cutoff}</td><td>${formatDuration(w.minutes)}</td><td>${money(base)}</td><td>${inc?money(inc):'-'}</td><td><strong>${money(base+inc)}</strong></td><td>${isCutoffLocked(w.cutoff)?statusBadge('locked'):employeeHasGap(name,w.cutoff)?statusBadge('gaps'):statusBadge(inc?'incentive':'complete')}</td></tr>`}).join('')}</table><div class="payslip-total"><strong>Total Historical Pay:</strong> ${money(total)}</div>`;
+  historyContent.innerHTML=`<h3>👤 ${escapeHtml(name)} — Payroll History</h3><div class="small-muted">Lifetime payroll shown from saved records.</div><table class="history-table"><tr><th>Cutoff</th><th>Hours</th><th>Base Pay</th><th>Incentive</th><th>Total</th><th>Status</th></tr>${groups.map(w=>{const base=isDollar?w.dollar:w.salary,inc=getWeeklyIncentive(name,w.cutoff);return `<tr><td>${w.cutoff}</td><td>${formatDuration(w.minutes)}</td><td>${money(base)}</td><td>${inc?money(inc):'-'}</td><td><strong>${money(base+inc)}</strong></td><td>${isCutoffLocked(w.cutoff)?statusBadge('locked'):statusBadge(inc?'incentive':'complete')}</td></tr>`}).join('')}</table><div class="payslip-total"><strong>Total Historical Pay:</strong> ${money(total)}</div>`;
   historyModal.style.display='flex';
 }
 function openAuditModal(){
@@ -1467,7 +1419,7 @@ function backupPayroll(){
 function restorePayroll(){restoreFile.value='';restoreFile.click();}
 function handleRestoreFile(event){
   const file=event.target.files?.[0]; if(!file)return; const reader=new FileReader();
-  reader.onload=()=>{try{const p=JSON.parse(reader.result);if(!Array.isArray(p.employees)||!Array.isArray(p.data))throw new Error('Invalid backup');if(!confirm('Restore this payroll backup? Current browser data will be replaced.'))return;employees=p.employees;data=p.data;weeklyIncentives=p.weeklyIncentives||{};cutoffLocks=p.cutoffLocks||{};auditLog=p.auditLog||[];employees.forEach(e=>{if(typeof e.active!=='boolean')e.active=true;if(!Array.isArray(e.workDays)||!e.workDays.length)e.workDays=[...DEFAULT_WORK_DAYS];});audit("Backup restored",file.name);saveAll();location.reload();}catch(e){alert('Unable to restore backup: '+e.message);}};reader.readAsText(file);
+  reader.onload=()=>{try{const p=JSON.parse(reader.result);if(!Array.isArray(p.employees)||!Array.isArray(p.data))throw new Error('Invalid backup');if(!confirm('Restore this payroll backup? Current browser data will be replaced.'))return;employees=p.employees;data=p.data;weeklyIncentives=p.weeklyIncentives||{};cutoffLocks=p.cutoffLocks||{};auditLog=p.auditLog||[];employees.forEach(e=>{if(typeof e.active!=='boolean')e.active=true;delete e.workDays;});audit("Backup restored",file.name);saveAll();location.reload();}catch(e){alert('Unable to restore backup: '+e.message);}};reader.readAsText(file);
 }
 function confirmClear(){
   if(!confirm('This will permanently clear all payroll data in this browser. Continue?'))return;
@@ -1478,8 +1430,8 @@ function confirmClear(){
 function openEmployeeModal(){renderEmployees();employeeModal.style.display='flex';}
 function closeEmployeeModal(){employeeModal.style.display='none';}
 
-// Ensure older employee records have a default schedule.
-employees.forEach(e=>{if(!Array.isArray(e.workDays)||!e.workDays.length)e.workDays=[...DEFAULT_WORK_DAYS];});
+// Remove legacy schedule data from older versions.
+employees.forEach(e=>{delete e.workDays;});
 saveAll();
 
 // Initialize V2 state and UI.

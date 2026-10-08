@@ -28,7 +28,6 @@
   <div class="stat-card"><div class="stat-label">💰 Current Payroll</div><div class="stat-value" id="dashPayroll">-</div></div>
   <div class="stat-card"><div class="stat-label">🎁 Incentives</div><div class="stat-value" id="dashIncentives">-</div></div>
   <div class="stat-card"><div class="stat-label">⏱ Total Hours</div><div class="stat-value" id="dashHours">0h 0m</div></div>
-  <div class="stat-card"><div class="stat-label">⚠️ Attendance Gaps</div><div class="stat-value" id="dashGaps">0</div></div>
   <div class="stat-card"><div class="stat-label">🔒 Locked Cutoffs</div><div class="stat-value" id="dashLocked">0</div></div>
 </div>
 
@@ -47,7 +46,7 @@
     <select id="cutoffFilter" onchange="render()"><option value="">All Cutoffs</option></select>
     <select id="monthFilter" onchange="render()"><option value="">All Months</option></select>
     <select id="statusFilter" onchange="render()">
-      <option value="">All Status</option><option value="complete">Complete</option><option value="gaps">Attendance Gaps</option>
+      <option value="">All Status</option><option value="complete">Complete</option>
       <option value="incentive">With Incentive</option><option value="no-incentive">No Incentive</option><option value="locked">Locked</option>
     </select>
     <button class="btn-secondary" onclick="clearFilters()">↺ Clear Filters</button>
@@ -82,7 +81,6 @@
 <div class="modal" id="employeeModal"><div class="modal-box">
 <h3>👥 Employees</h3>
 <input id="empName" placeholder="Name"><input id="empRate" type="number" placeholder="₱ Rate/hr"><input id="empDollarRate" type="number" placeholder="$ Rate/hr">
-<div class="schedule-help"><strong>Default work schedule:</strong> Monday–Friday. You can change each employee's schedule after adding them.</div>
 <button onclick="addEmployee()">Add</button>
 <div id="empList"></div><button onclick="closeEmployeeModal()">Close</button>
 </div></div>

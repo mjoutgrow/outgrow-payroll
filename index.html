@@ -29,26 +29,6 @@
 
 <div class="card">
 <h3>📋 Records</h3>
-<div class="records-filter">
-  <div>
-    <label for="recordEmployeeFilter">Employee</label>
-    <select id="recordEmployeeFilter" onchange="render()">
-      <option value="">All Employees</option>
-    </select>
-  </div>
-  <div>
-    <label for="recordDateFrom">From date</label>
-    <input type="date" id="recordDateFrom" onchange="render()">
-  </div>
-  <div>
-    <label for="recordDateTo">To date</label>
-    <input type="date" id="recordDateTo" onchange="render()">
-  </div>
-  <div class="records-filter-actions">
-    <button type="button" class="btn-secondary" onclick="clearRecordFilters()">↺ Clear Filters</button>
-  </div>
-</div>
-<div id="recordFilterSummary" class="record-filter-summary"></div>
 <table>
 <tr>
 <th>Name</th><th>Date</th><th>Hours</th><th>Late</th><th>Break</th><th>MIA</th><th>Salary</th><th>$</th><th>Action</th>

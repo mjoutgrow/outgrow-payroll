@@ -241,7 +241,7 @@ function migrateExistingIncentives(){
   const migrated = {};
 
   data.forEach(d => {
-    const cutoff = d.date ? getCutoff(d.date, d.name) : "";
+    const cutoff = d.date ? getCutoff(d.date) : "";
     if(!cutoff || !d.name) return;
 
     // Older builds may have stored the incentive on each daily record.
@@ -615,29 +615,22 @@ function confirmClear(){data=[];saveAll();render();closeClearModal();}
 
 /* ================= CUTOFF ================= */
 
-function getCutoff(date, employeeName){
-  // Each employee's first encoded attendance date anchors repeating
-  // 20-calendar-day payroll periods (start date through start date + 19 days).
-  const firstRecord = data.find(record => record.name === employeeName && record.date);
-  const anchorDate = firstRecord ? String(firstRecord.date).slice(0,10) : String(date).slice(0,10);
+function getCutoff(date){
+  // Semi-monthly payroll periods: 1st–15th and 16th–last day of month.
+  const d = toEST(date);
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  const day = d.getDate();
 
-  const toUtcDay = value => {
-    const [year, month, day] = String(value).slice(0,10).split("-").map(Number);
-    return Date.UTC(year, month - 1, day);
-  };
-  const fromUtcDay = value => {
-    const d = new Date(value);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
-  };
+  const start = new Date(year, month, day <= 15 ? 1 : 16);
+  const end = day <= 15
+    ? new Date(year, month, 15)
+    : new Date(year, month + 1, 0);
 
-  const anchor = toUtcDay(anchorDate);
-  const current = toUtcDay(date);
-  const dayMs = 24 * 60 * 60 * 1000;
-  const periodIndex = Math.floor((current - anchor) / (20 * dayMs));
-  const start = anchor + periodIndex * 20 * dayMs;
-  const end = start + 19 * dayMs;
+  const formatDate = value =>
+    `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 
-  return `${fromUtcDay(start)} to ${fromUtcDay(end)}`;
+  return `${formatDate(start)} to ${formatDate(end)}`;
 }
 
 /* ================= PAYSLIP ================= */
@@ -717,7 +710,7 @@ function showPayslip(name, fromDate, toDate){
 
   // Add each semi-monthly incentive once when its payroll period has
   // attendance included in the selected range.
-  const includedCutoffs = [...new Set(rows.map(r => getCutoff(r.date, name)))];
+  const includedCutoffs = [...new Set(rows.map(r => getCutoff(r.date)))];
   const incentive = includedCutoffs.reduce(
     (sum, cutoff) => sum + getWeeklyIncentive(name, cutoff), 0
   );
@@ -862,7 +855,7 @@ function toHHMM(val){
 function buildWeeklyExportRows(cutoff){
   const grouped = {};
   data.forEach(d => {
-    if(getCutoff(d.date, d.name) !== cutoff) return;
+    if(getCutoff(d.date) !== cutoff) return;
     const key = incentiveKey(d.name, cutoff);
     if(!grouped[key]) grouped[key] = {name:d.name, cutoff, minutes:0};
     grouped[key].minutes += +(d.minutes || 0);
@@ -891,8 +884,9 @@ function weeklyCsv(cutoff){
 
 function exportCSV(){
   if(data.length === 0){ alert("No records available"); return; }
-  const latestRecord = [...data].filter(d=>d.date).sort((a,b)=>String(b.date).localeCompare(String(a.date)))[0];
-  const currentCutoff = getCutoff(latestRecord.date, latestRecord.name);
+  const latestDate = data.map(d=>new Date(d.date)).sort((a,b)=>b-a)[0];
+  const latestStr = latestDate.getFullYear()+"-"+String(latestDate.getMonth()+1).padStart(2,'0')+"-"+String(latestDate.getDate()).padStart(2,'0');
+  const currentCutoff = getCutoff(latestStr);
   const csv = weeklyCsv(currentCutoff);
   if(!csv){ alert("No records found for latest cutoff"); return; }
   const a=document.createElement("a");
@@ -903,7 +897,7 @@ function exportCSV(){
 
 function exportPreviousCutoffCSV(){
   if(data.length === 0){ alert("No records available"); return; }
-  const cutoffs=[...new Set(data.filter(d=>d.date).map(d=>getCutoff(d.date,d.name)))].sort((a,b)=>new Date(a.split(" to ")[0])-new Date(b.split(" to ")[0]));
+  const cutoffs=[...new Set(data.map(d=>d.date).filter(Boolean).map(getCutoff))].sort((a,b)=>new Date(a.split(" to ")[0])-new Date(b.split(" to ")[0]));
   if(cutoffs.length < 2){ alert("No previous cutoff available. At least two cutoffs are required."); return; }
   const previousCutoff=cutoffs[cutoffs.length-2];
   const csv=weeklyCsv(previousCutoff);
@@ -942,7 +936,7 @@ function exportMonthlyCSV(){
     grouped[key].mia += +(d.mia||0);
     grouped[key].salary += +(d.salary||0);
     grouped[key].dollar += +(d.dollar||0);
-    grouped[key].cutoffs.add(getCutoff(d.date, d.name));
+    grouped[key].cutoffs.add(getCutoff(d.date));
   });
 
   const rows=Object.values(grouped);
@@ -1012,29 +1006,6 @@ function updateWeeklyIncentive(name, cutoff, value){
   render();
 }
 
-/* ================= RECORD FILTERS ================= */
-
-function clearRecordFilters(){
-  const employeeFilter = document.getElementById("recordEmployeeFilter");
-  const fromFilter = document.getElementById("recordDateFrom");
-  const toFilter = document.getElementById("recordDateTo");
-  if(employeeFilter) employeeFilter.value = "";
-  if(fromFilter) fromFilter.value = "";
-  if(toFilter) toFilter.value = "";
-  render();
-}
-
-function refreshRecordEmployeeFilter(){
-  const select = document.getElementById("recordEmployeeFilter");
-  if(!select) return;
-  const current = select.value;
-  const names = [...new Set(data.map(record => record.name).filter(Boolean))]
-    .sort((a,b)=>a.localeCompare(b));
-  select.innerHTML = '<option value="">All Employees</option>' +
-    names.map(name => `<option value="${String(name).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;")}">${String(name).replace(/&/g,"&amp;").replace(/</g,"&lt;")}</option>`).join("");
-  if(names.includes(current)) select.value = current;
-}
-
 /* ================= RENDER ================= */
 
 function render(){
@@ -1049,31 +1020,13 @@ function render(){
 
   /* ================= RECORDS TABLE ================= */
 
-  refreshRecordEmployeeFilter();
-  const employeeFilter = document.getElementById("recordEmployeeFilter")?.value || "";
-  const dateFrom = document.getElementById("recordDateFrom")?.value || "";
-  const dateTo = document.getElementById("recordDateTo")?.value || "";
-
-  const filteredRecordRows = data
-    .map((item,index)=>({ item,index }))
-    .filter(row=>{
-      const recordDate = String(row.item.date || "").slice(0,10);
-      if(search && !row.item.name.toLowerCase().includes(search)) return false;
-      if(employeeFilter && row.item.name !== employeeFilter) return false;
-      if(dateFrom && recordDate < dateFrom) return false;
-      if(dateTo && recordDate > dateTo) return false;
-      return true;
-    })
-    .sort((a,b)=>String(b.item.date).localeCompare(String(a.item.date)));
-
-  const filteredMinutes = filteredRecordRows.reduce((sum,row)=>sum+(Number(row.item.minutes)||0),0);
-  const filterSummary = document.getElementById("recordFilterSummary");
-  if(filterSummary){
-    filterSummary.textContent = `${filteredRecordRows.length} record(s) • ${formatDuration(filteredMinutes)} total hours`;
-  }
-
-  // Show every record matching the selected employee/date filters.
-  filteredRecordRows
+  data
+  .map((item,index)=>({ item,index }))
+  .filter(row=>{
+    if(search && !row.item.name.toLowerCase().includes(search)) return false;
+    return true;
+  })
+  .slice(0,7)
   .forEach(row=>{
 
     let d = row.item;
@@ -1105,18 +1058,12 @@ function render(){
 
     if(search && !d.name.toLowerCase().includes(search)) return;
 
-    // Keep Weekly Summary in sync with the Records employee/date filters.
-    const recordDate = String(d.date || "").slice(0,10);
-    if(employeeFilter && d.name !== employeeFilter) return;
-    if(dateFrom && recordDate < dateFrom) return;
-    if(dateTo && recordDate > dateTo) return;
-
-    let wk = d.name + getCutoff(d.date, d.name);
+    let wk = d.name + getCutoff(d.date);
 
     if(!weekly[wk]){
       weekly[wk] = {
         name:d.name,
-        cutoff:getCutoff(d.date, d.name),
+        cutoff:getCutoff(d.date),
         minutes:0,
         late:0,
         break:0,
@@ -1198,7 +1145,7 @@ function render(){
 
   Object.values(monthly).forEach(m=>{
     const emp = employees.find(e => e.name === m.name);
-    const cutoffs = [...new Set(data.filter(d => d.name === m.name && d.date.slice(0,7) === m.month).map(d => getCutoff(d.date, d.name)))];
+    const cutoffs = [...new Set(data.filter(d => d.name === m.name && d.date.slice(0,7) === m.month).map(d => getCutoff(d.date)))];
     const incentive = cutoffs.reduce((sum, cutoff) => sum + getWeeklyIncentive(m.name, cutoff), 0);
     const isDollar = emp && +emp.dollarRate > 0;
     const basePay = isDollar ? m.dollar : m.salary;

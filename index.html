@@ -15,6 +15,8 @@
 
 <div class="card">
 <button class="btn-primary" onclick="openAddModal()">➕ Add Record</button>
+<button class="btn-secondary" onclick="document.getElementById('attendancePdfInput').click()">📄 Upload Attendance PDF</button>
+<input type="file" id="attendancePdfInput" accept=".pdf,application/pdf" style="display:none" onchange="importAttendancePDF(event)">
 <button class="btn-secondary" onclick="openEmployeeModal()">👥 Employees</button>
 <button class="btn-secondary" onclick="exportCSV()">📤 Latest Cutoff CSV</button>
 <button class="btn-secondary" onclick="exportMonthlyCSV()">📅 Export Monthly</button>
@@ -141,6 +143,7 @@ onblur="autoFormatTime(this)" onpaste="handlePaste(event,this)">
 </div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="script.js"></script>
 </body>
 </html>

@@ -908,6 +908,189 @@ function formatCutoffFilename(cutoff){
   return `${start.toLocaleString("en-US",{month:"long"})}_${start.getDate()}-${end.getDate()}_cutoff.csv`;
 }
 
+
+
+/* ================= ATTENDANCE PDF IMPORT ================= */
+
+function pdfDurationToMinutes(value){
+  const match = String(value || "").trim().match(/^(\d{1,3}):([0-5]\d)(?::([0-5]\d))?$/);
+  if(!match) return null;
+  return (+match[1] * 60) + (+match[2]) + ((+(match[3] || 0)) >= 30 ? 1 : 0);
+}
+
+function pdfClockTo24(value){
+  const cleaned = String(value || "").replace(/\s+/g," ").trim();
+  if(!cleaned) return "";
+  try{
+    return normalizeTimeInput(convertTo24Hour(cleaned));
+  } catch(e){
+    return "";
+  }
+}
+
+function importAttendancePDF(event){
+  const file = event.target.files && event.target.files[0];
+  if(!file) return;
+  if(!window.pdfjsLib){
+    alert("PDF reader could not load. Check your internet connection and try again.");
+    event.target.value = "";
+    return;
+  }
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+  const reader = new FileReader();
+  reader.onload = async function(){
+    try{
+      const pdf = await pdfjsLib.getDocument({data:new Uint8Array(reader.result)}).promise;
+      const extracted = [];
+      let pageDates = [];
+
+      for(let pageNo = 1; pageNo <= pdf.numPages; pageNo++){
+        const page = await pdf.getPage(pageNo);
+        const viewport = page.getViewport({scale:1});
+        const content = await page.getTextContent();
+        const items = content.items
+          .filter(item => item.str && item.str.trim())
+          .map(item => ({
+            text:item.str.trim(),
+            x:item.transform[4],
+            y:viewport.height - item.transform[5] - (item.height || 0),
+            width:item.width || 0
+          }));
+
+        // This importer targets the team-summary DTR table: date headers sit
+        // in the upper header band, followed by one employee row per line.
+        const headerItems = items.filter(item => item.y >= 54 && item.y <= 59 && item.x > 75)
+          .sort((a,b)=>a.x-b.x);
+        const headerText = headerItems.map(item=>item.text).join(" ");
+        const dateMatches = [...headerText.matchAll(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s+(\d{4})/gi)];
+        const dates = dateMatches.map(match=>{
+          const month = String(new Date(`${match[1]} 1, ${match[3]}`).getMonth()+1).padStart(2,"0");
+          return `${match[3]}-${month}-${String(match[2]).padStart(2,"0")}`;
+        });
+
+        if(!dates.length){
+          throw new Error("Could not read the daily date headings. Please use the team-summary DTR PDF format.");
+        }
+
+        // Employee names occupy the left-most column. Each employee's
+        // attendance values are printed on the immediately following line.
+        const nameItems = items.filter(item => item.x < 66 && item.y >= 60 && item.y < viewport.height - 30)
+          .sort((a,b)=>a.y-b.y || a.x-b.x);
+
+        const nameRows = [];
+        nameItems.forEach(item=>{
+          const existing = nameRows.find(row => Math.abs(row.y-item.y) < 0.45);
+          if(existing) existing.parts.push(item);
+          else nameRows.push({y:item.y,parts:[item]});
+        });
+
+        const dateCount = Math.min(dates.length,17);
+        const dayStep = 38.2;
+        const firstDayBase = 66.5;
+        for(const nameRow of nameRows){
+          const employeeName = nameRow.parts.sort((a,b)=>a.x-b.x).map(p=>p.text).join(" ").replace(/\s+/g," ").trim();
+          if(!employeeName || /^(AGENT|CUT OFF|WEEKLY TOTAL)$/i.test(employeeName)) continue;
+
+          const valueY = nameRow.y + 0.29;
+          const rowItems = items.filter(item => item.x >= firstDayBase+3 && item.x < 744 && Math.abs(item.y-valueY) < 0.5);
+          if(!rowItems.length) continue;
+
+          for(let day=0; day<dateCount; day++){
+            const baseX = firstDayBase + day*dayStep;
+            const inText = rowItems.filter(item=>item.x >= baseX+3.5 && item.x < baseX+13.0).sort((a,b)=>a.x-b.x).map(i=>i.text).join(" ");
+            const outText = rowItems.filter(item=>item.x >= baseX+13.5 && item.x < baseX+22.5).sort((a,b)=>a.x-b.x).map(i=>i.text).join(" ");
+            const lateText = rowItems.filter(item=>item.x >= baseX+22.0 && item.x < baseX+27.5).sort((a,b)=>a.x-b.x).map(i=>i.text).join("");
+            const breakText = rowItems.filter(item=>item.x >= baseX+27.5 && item.x < baseX+32.8).sort((a,b)=>a.x-b.x).map(i=>i.text).join("");
+            const idleText = rowItems.filter(item=>item.x >= baseX+32.8 && item.x < baseX+36.8).sort((a,b)=>a.x-b.x).map(i=>i.text).join("");
+            const totalText = rowItems.filter(item=>item.x >= baseX+36.8 && item.x < baseX+40.0).sort((a,b)=>a.x-b.x).map(i=>i.text).join("");
+
+            const totalMinutes = pdfDurationToMinutes(totalText);
+            if(totalMinutes === null || totalMinutes <= 0) continue;
+
+            const timeIn = pdfClockTo24(inText);
+            const timeOut = pdfClockTo24(outText);
+            const lateMinutes = pdfDurationToMinutes(lateText) || 0;
+            const breakMinutes = pdfDurationToMinutes(breakText) || 0;
+            const idleMinutes = pdfDurationToMinutes(idleText) || 0;
+
+            extracted.push({
+              name:employeeName,
+              date:dates[day],
+              minutes:totalMinutes,
+              hours:totalMinutes/60,
+              late:lateMinutes,
+              break:breakMinutes,
+              mia:idleMinutes,
+              salary:0,
+              dollar:0,
+              timeIn,
+              timeOut
+            });
+          }
+        }
+        pageDates = dates;
+      }
+
+      if(!extracted.length){
+        throw new Error("No attendance entries were detected. The PDF may have a different layout or be image-only.");
+      }
+
+      const matched = [];
+      const unknown = new Set();
+      extracted.forEach(item=>{
+        const emp = employees.find(e=>e.name.trim().toLowerCase() === item.name.trim().toLowerCase());
+        if(!emp){ unknown.add(item.name); return; }
+        item.salary = (item.minutes/60 * (+emp.rate || 0)).toFixed(2);
+        item.dollar = (item.minutes/60 * (+emp.dollarRate || 0)).toFixed(2);
+        matched.push(item);
+      });
+
+      const duplicateKeys = new Set(data.map(d=>`${d.name.toLowerCase()}|${d.date}`));
+      const duplicates = matched.filter(item=>duplicateKeys.has(`${item.name.toLowerCase()}|${item.date}`));
+      const seenInFile = new Set();
+      const unique = matched.filter(item=>{
+        const key = `${item.name.toLowerCase()}|${item.date}`;
+        if(duplicateKeys.has(key) || seenInFile.has(key)) return false;
+        seenInFile.add(key);
+        return true;
+      });
+
+      const dateRange = pageDates.length
+        ? `${pageDates[0]} to ${pageDates[pageDates.length-1]}` : "dates found in PDF";
+      const preview = `PDF attendance detected.\nDate columns: ${dateRange}\n` +
+        `New records ready: ${unique.length}\nDuplicate employee/date entries skipped: ${duplicates.length}\n` +
+        `Employees not found in payroll list: ${unknown.size}\n\n` +
+        (unknown.size ? `Unmatched names:\n${[...unknown].slice(0,10).join("\n")}\n\n` : "") +
+        `Import the matched records now?`;
+
+      if(!unique.length){
+        alert(preview + "\n\nNo new matched records to import.");
+        return;
+      }
+      if(!confirm(preview)) return;
+
+      unique.reverse().forEach(item=>data.unshift(item));
+      saveAll();
+      render();
+      alert(`Imported ${unique.length} attendance record(s) from PDF.` +
+        (duplicates.length ? `\nSkipped duplicates: ${duplicates.length}.` : "") +
+        (unknown.size ? `\nUnmatched employees: ${unknown.size}.` : ""));
+    } catch(err){
+      alert("PDF import failed: " + err.message);
+    } finally {
+      event.target.value = "";
+    }
+  };
+  reader.onerror = ()=>{
+    alert("Unable to read the selected PDF file.");
+    event.target.value = "";
+  };
+  reader.readAsArrayBuffer(file);
+}
+
 function csvEscape(value){
   const s=String(value ?? "");
   return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;

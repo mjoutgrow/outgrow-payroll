@@ -17,8 +17,9 @@
 <button class="btn-primary" onclick="openAddModal()">➕ Add Record</button>
 <button class="btn-secondary" onclick="openEmployeeModal()">👥 Employees</button>
 <button class="btn-secondary" onclick="exportCSV()">📤 Latest Cutoff CSV</button>
-<button class="btn-secondary" onclick="exportPreviousCutoffCSV()">⏮️ Previous Cutoff CSV</button>
 <button class="btn-secondary" onclick="exportMonthlyCSV()">📅 Export Monthly</button>
+<button class="btn-primary" onclick="openCutoffModal()">🗓️ Set Cutoff Date</button>
+<div class="cutoff-status" id="cutoffStatus">Selected cutoff: Not set</div>
 <button class="btn-danger" onclick="openClearModal()">🗑️ Clear All</button>
 </div>
 
@@ -122,6 +123,16 @@ onblur="autoFormatTime(this)" onpaste="handlePaste(event,this)">
 <div id="payslipContent"></div>
 </div>
 </div>
+
+<div class="modal" id="cutoffModal"><div class="modal-box">
+<h3>🗓️ Set Payroll Cutoff</h3>
+<label><strong>From Date</strong></label>
+<input type="date" id="cutoffFromDate">
+<label><strong>To Date</strong></label>
+<input type="date" id="cutoffToDate">
+<button class="btn-primary" onclick="saveCutoff()">Save Cutoff</button>
+<button class="btn-secondary" onclick="closeCutoffModal()">Cancel</button>
+</div></div>
 
 <div class="modal" id="clearModal"><div class="modal-box">
 <h3>⚠️ Clear All Data?</h3>

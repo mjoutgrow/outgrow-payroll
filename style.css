@@ -327,3 +327,16 @@ td:first-child{
     -moz-appearance: textfield;
     appearance: textfield;
 }
+.cutoff-status{
+  display:inline-block;
+  margin:8px 10px;
+  padding:10px 14px;
+  border-radius:12px;
+  background:#e8fbfc;
+  color:#087f85;
+  font-size:13px;
+  font-weight:600;
+}
+@media(max-width:768px){
+  .cutoff-status{display:block;margin:8px 0;text-align:center;}
+}

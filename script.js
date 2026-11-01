@@ -235,29 +235,8 @@ function getWeeklyIncentive(name, cutoff){
 }
 
 function migrateExistingIncentives(){
-  // Keep an already-migrated weekly store intact.
-  if(Object.keys(weeklyIncentives).length > 0) return;
-
-  const migrated = {};
-
-  data.forEach(d => {
-    const cutoff = d.date ? getCutoff(d.date) : "";
-    if(!cutoff || !d.name) return;
-
-    // Older builds may have stored the incentive on each daily record.
-    const legacyValue = d.incentive ?? d.weeklyIncentive ?? d.salaryBonus ?? d.bonus;
-    if(legacyValue === undefined || legacyValue === null || legacyValue === "") return;
-
-    const value = Math.max(0, +legacyValue || 0);
-    const key = incentiveKey(d.name, cutoff);
-
-    // A weekly incentive must only be migrated once per employee/cutoff.
-    // If legacy daily rows duplicated it, keep the highest value instead of multiplying it.
-    migrated[key] = Math.max(migrated[key] || 0, value);
-  });
-
-  weeklyIncentives = migrated;
-  localStorage.setItem("weeklyIncentives", JSON.stringify(weeklyIncentives));
+  // Existing weekly incentive entries are retained. New entries are keyed
+  // to the manually selected cutoff range.
 }
 
 const saveAll = () => {
@@ -613,24 +592,57 @@ function openClearModal(){clearModal.style.display="flex";}
 function closeClearModal(){clearModal.style.display="none";}
 function confirmClear(){data=[];saveAll();render();closeClearModal();}
 
-/* ================= CUTOFF ================= */
+/* ================= MANUAL CUTOFF ================= */
 
-function getCutoff(date){
-  // Semi-monthly payroll periods: 1st–15th and 16th–last day of month.
-  const d = toEST(date);
-  const year = d.getFullYear();
-  const month = d.getMonth();
-  const day = d.getDate();
+let activeCutoff = JSON.parse(localStorage.getItem("activePayrollCutoff")) || {
+  from: "",
+  to: ""
+};
 
-  const start = new Date(year, month, day <= 15 ? 1 : 16);
-  const end = day <= 15
-    ? new Date(year, month, 15)
-    : new Date(year, month + 1, 0);
+function cutoffLabel(){
+  return activeCutoff.from && activeCutoff.to
+    ? `${activeCutoff.from} to ${activeCutoff.to}`
+    : "";
+}
 
-  const formatDate = value =>
-    `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+function getCutoff(){
+  return cutoffLabel();
+}
 
-  return `${formatDate(start)} to ${formatDate(end)}`;
+function openCutoffModal(){
+  document.getElementById("cutoffFromDate").value = activeCutoff.from || "";
+  document.getElementById("cutoffToDate").value = activeCutoff.to || "";
+  document.getElementById("cutoffModal").style.display = "flex";
+}
+
+function closeCutoffModal(){
+  document.getElementById("cutoffModal").style.display = "none";
+}
+
+function saveCutoff(){
+  const from = document.getElementById("cutoffFromDate").value;
+  const to = document.getElementById("cutoffToDate").value;
+  if(!from || !to){ alert("Please select both cutoff dates."); return; }
+  if(from > to){ alert("From Date cannot be later than To Date."); return; }
+
+  activeCutoff = { from, to };
+  localStorage.setItem("activePayrollCutoff", JSON.stringify(activeCutoff));
+  closeCutoffModal();
+  render();
+}
+
+function updateCutoffStatus(){
+  const status = document.getElementById("cutoffStatus");
+  if(status){
+    status.textContent = cutoffLabel()
+      ? `Selected cutoff: ${cutoffLabel()}`
+      : "Selected cutoff: Not set — click Set Cutoff Date";
+  }
+}
+
+function recordIsInCutoff(record){
+  return !!(activeCutoff.from && activeCutoff.to &&
+    record.date >= activeCutoff.from && record.date <= activeCutoff.to);
 }
 
 /* ================= PAYSLIP ================= */
@@ -708,12 +720,9 @@ function showPayslip(name, fromDate, toDate){
     .filter(d => d.name == name && d.date >= fromDate && d.date <= toDate)
     .sort((a,b) => new Date(a.date) - new Date(b.date));
 
-  // Add each semi-monthly incentive once when its payroll period has
-  // attendance included in the selected range.
-  const includedCutoffs = [...new Set(rows.map(r => getCutoff(r.date)))];
-  const incentive = includedCutoffs.reduce(
-    (sum, cutoff) => sum + getWeeklyIncentive(name, cutoff), 0
-  );
+  const includesSelectedCutoff = !!cutoffLabel() && rows.some(r => recordIsInCutoff(r));
+  const incentive = includesSelectedCutoff
+    ? getWeeklyIncentive(name, cutoffLabel()) : 0;
 
   const cutoff = `${fromDate} to ${toDate}`;
   window.currentPayslip = { name, cutoff, incentive };
@@ -855,7 +864,7 @@ function toHHMM(val){
 function buildWeeklyExportRows(cutoff){
   const grouped = {};
   data.forEach(d => {
-    if(getCutoff(d.date) !== cutoff) return;
+    if(!recordIsInCutoff(d)) return;
     const key = incentiveKey(d.name, cutoff);
     if(!grouped[key]) grouped[key] = {name:d.name, cutoff, minutes:0};
     grouped[key].minutes += +(d.minutes || 0);
@@ -866,8 +875,7 @@ function buildWeeklyExportRows(cutoff){
 function weeklyCsv(cutoff){
   const rows = buildWeeklyExportRows(cutoff);
   if(!rows.length) return "";
-
-  let csv = "Employee,Cutoff,Hours,Peso Pay,Dollar Pay,Incentive,Total Pay\n";
+  let csv = "Employee,Cutoff,Hours,Peso Pay,Dollar Pay,Incentive,Total Pay\\n";
   rows.forEach(g=>{
     const emp = employees.find(e => e.name === g.name);
     const hours = g.minutes / 60;
@@ -877,34 +885,19 @@ function weeklyCsv(cutoff){
     const incentive = getWeeklyIncentive(g.name, cutoff);
     const basePay = emp && +emp.dollarRate > 0 ? +dollarPay || 0 : +pesoPay || 0;
     const totalPay = (basePay + incentive).toFixed(2);
-    csv += [g.name,g.cutoff,hoursFormatted,pesoPay,dollarPay,incentive.toFixed(2),totalPay].map(csvEscape).join(",") + "\n";
+    csv += [g.name,g.cutoff,hoursFormatted,pesoPay,dollarPay,incentive.toFixed(2),totalPay].map(csvEscape).join(",") + "\\n";
   });
   return csv;
 }
 
 function exportCSV(){
-  if(data.length === 0){ alert("No records available"); return; }
-  const latestDate = data.map(d=>new Date(d.date)).sort((a,b)=>b-a)[0];
-  const latestStr = latestDate.getFullYear()+"-"+String(latestDate.getMonth()+1).padStart(2,'0')+"-"+String(latestDate.getDate()).padStart(2,'0');
-  const currentCutoff = getCutoff(latestStr);
+  if(!cutoffLabel()){ alert("Please set a cutoff date first."); return; }
+  const currentCutoff = cutoffLabel();
   const csv = weeklyCsv(currentCutoff);
-  if(!csv){ alert("No records found for latest cutoff"); return; }
+  if(!csv){ alert("No records found within the selected cutoff."); return; }
   const a=document.createElement("a");
-  a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
+  a.href=URL.createObjectURL(new Blob(["\\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
   a.download=formatCutoffFilename(currentCutoff);
-  a.click();
-}
-
-function exportPreviousCutoffCSV(){
-  if(data.length === 0){ alert("No records available"); return; }
-  const cutoffs=[...new Set(data.map(d=>d.date).filter(Boolean).map(getCutoff))].sort((a,b)=>new Date(a.split(" to ")[0])-new Date(b.split(" to ")[0]));
-  if(cutoffs.length < 2){ alert("No previous cutoff available. At least two cutoffs are required."); return; }
-  const previousCutoff=cutoffs[cutoffs.length-2];
-  const csv=weeklyCsv(previousCutoff);
-  if(!csv){ alert("No records found for previous cutoff"); return; }
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
-  a.download=formatCutoffFilename(previousCutoff);
   a.click();
 }
 
@@ -1010,6 +1003,7 @@ function updateWeeklyIncentive(name, cutoff, value){
 
 function render(){
 
+  updateCutoffStatus();
   tbody.innerHTML = "";
   summaryBody.innerHTML = "";
   monthlyBody.innerHTML = "";
@@ -1023,10 +1017,11 @@ function render(){
   data
   .map((item,index)=>({ item,index }))
   .filter(row=>{
+    // Show attendance records only inside the manually selected cutoff range.
+    if(!recordIsInCutoff(row.item)) return false;
     if(search && !row.item.name.toLowerCase().includes(search)) return false;
     return true;
   })
-  .slice(0,7)
   .forEach(row=>{
 
     let d = row.item;
@@ -1052,18 +1047,25 @@ function render(){
     `;
   });
 
+  if(!activeCutoff.from || !activeCutoff.to){
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#6e6e73;">Set a cutoff date to view attendance records.</td></tr>';
+  } else if(!data.some(d => recordIsInCutoff(d) && (!search || d.name.toLowerCase().includes(search)))){
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#6e6e73;">No attendance records found for the selected cutoff period.</td></tr>';
+  }
+
   /* ================= SUMMARY + MONTHLY ================= */
 
   data.forEach(d=>{
 
     if(search && !d.name.toLowerCase().includes(search)) return;
+    if(!recordIsInCutoff(d)) return;
 
-    let wk = d.name + getCutoff(d.date);
+    let wk = d.name + cutoffLabel();
 
     if(!weekly[wk]){
       weekly[wk] = {
         name:d.name,
-        cutoff:getCutoff(d.date),
+        cutoff:cutoffLabel(),
         minutes:0,
         late:0,
         break:0,
@@ -1145,8 +1147,11 @@ function render(){
 
   Object.values(monthly).forEach(m=>{
     const emp = employees.find(e => e.name === m.name);
-    const cutoffs = [...new Set(data.filter(d => d.name === m.name && d.date.slice(0,7) === m.month).map(d => getCutoff(d.date)))];
-    const incentive = cutoffs.reduce((sum, cutoff) => sum + getWeeklyIncentive(m.name, cutoff), 0);
+    const hasSelectedCutoffRecords = data.some(d =>
+      d.name === m.name && d.date.slice(0,7) === m.month && recordIsInCutoff(d)
+    );
+    const incentive = hasSelectedCutoffRecords && cutoffLabel()
+      ? getWeeklyIncentive(m.name, cutoffLabel()) : 0;
     const isDollar = emp && +emp.dollarRate > 0;
     const basePay = isDollar ? m.dollar : m.salary;
     const totalPay = basePay + incentive;

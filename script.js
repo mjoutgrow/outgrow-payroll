@@ -616,69 +616,169 @@ function confirmClear(){data=[];saveAll();render();closeClearModal();}
 /* ================= CUTOFF ================= */
 
 function getCutoff(date){
-  let d=toEST(date);
-  let day=d.getDay();
-  let diff=d.getDate()-day+(day===0?-6:1);
-  let mon=new Date(d);mon.setDate(diff);
-  let sun=new Date(mon);sun.setDate(mon.getDate()+6);
-  return mon.toISOString().split("T")[0]+" to "+sun.toISOString().split("T")[0];
+  // Semi-monthly payroll periods: 1st–15th and 16th–last day of month.
+  const d = toEST(date);
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  const day = d.getDate();
+
+  const start = new Date(year, month, day <= 15 ? 1 : 16);
+  const end = day <= 15
+    ? new Date(year, month, 15)
+    : new Date(year, month + 1, 0);
+
+  const formatDate = value =>
+    `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+
+  return `${formatDate(start)} to ${formatDate(end)}`;
 }
 
 /* ================= PAYSLIP ================= */
 
-function showPayslip(name, cutoff){
+function openPayslipRange(name, presetRange){
+  const [presetFrom, presetTo] = String(presetRange || "").split(" to ");
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
 
-  const incentive = getWeeklyIncentive(name, cutoff);
+  let modal = document.getElementById("payslipRangeModal");
+  if(!modal){
+    modal = document.createElement("div");
+    modal.id = "payslipRangeModal";
+    modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.48);display:flex;align-items:center;justify-content:center;z-index:100000;padding:16px;";
+    modal.innerHTML = `
+      <div style="background:#fff;color:#222;border-radius:16px;padding:22px;width:min(440px,100%);box-shadow:0 12px 40px rgba(0,0,0,.25);">
+        <h3 style="margin:0 0 6px;">Generate Payslip</h3>
+        <div id="payslipRangeEmployee" style="color:#666;margin-bottom:18px;"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <label style="font-size:13px;font-weight:600;">From Date
+            <input id="payslipFromDate" type="date" style="display:block;box-sizing:border-box;width:100%;margin-top:6px;padding:10px;border:1px solid #ccc;border-radius:8px;">
+          </label>
+          <label style="font-size:13px;font-weight:600;">To Date
+            <input id="payslipToDate" type="date" style="display:block;box-sizing:border-box;width:100%;margin-top:6px;padding:10px;border:1px solid #ccc;border-radius:8px;">
+          </label>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;">
+          <button type="button" id="cancelPayslipRange" style="padding:10px 16px;border:0;border-radius:8px;background:#eee;cursor:pointer;">Cancel</button>
+          <button type="button" id="generatePayslipRange" style="padding:10px 16px;border:0;border-radius:8px;background:#16b6bd;color:#fff;font-weight:600;cursor:pointer;">Generate Payslip</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener("click", event => {
+      if(event.target === modal) modal.style.display = "none";
+    });
+    modal.querySelector("#cancelPayslipRange").addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+  }
 
-  window.currentPayslip = {
-    name,
-    cutoff,
-    incentive
+  modal.dataset.employee = name;
+  modal.querySelector("#payslipRangeEmployee").textContent = `Employee: ${name}`;
+  modal.querySelector("#payslipFromDate").value = presetFrom || todayKey;
+  modal.querySelector("#payslipToDate").value = presetTo || todayKey;
+  modal.querySelector("#generatePayslipRange").onclick = () => {
+    const fromDate = modal.querySelector("#payslipFromDate").value;
+    const toDate = modal.querySelector("#payslipToDate").value;
+    if(!fromDate || !toDate){
+      alert("Please select both From Date and To Date.");
+      return;
+    }
+    if(fromDate > toDate){
+      alert("From Date cannot be later than To Date.");
+      return;
+    }
+    modal.style.display = "none";
+    showPayslip(name, fromDate, toDate);
   };
+  modal.style.display = "flex";
+}
+
+function showPayslip(name, fromDate, toDate){
+  // Backward compatibility: a single "YYYY-MM-DD to YYYY-MM-DD" argument
+  // is treated as the selected date range.
+  if(toDate === undefined && typeof fromDate === "string" && fromDate.includes(" to ")){
+    [fromDate, toDate] = fromDate.split(" to ");
+  }
+
+  if(!fromDate || !toDate || fromDate > toDate){
+    alert("Please select a valid payslip date range.");
+    return;
+  }
 
   let rows = data
-    .filter(d => d.name == name && getCutoff(d.date) == cutoff)
+    .filter(d => d.name == name && d.date >= fromDate && d.date <= toDate)
     .sort((a,b) => new Date(a.date) - new Date(b.date));
+
+  // Add each semi-monthly incentive once when its payroll period has
+  // attendance included in the selected range.
+  const includedCutoffs = [...new Set(rows.map(r => getCutoff(r.date)))];
+  const incentive = includedCutoffs.reduce(
+    (sum, cutoff) => sum + getWeeklyIncentive(name, cutoff), 0
+  );
+
+  const cutoff = `${fromDate} to ${toDate}`;
+  window.currentPayslip = { name, cutoff, incentive };
 
   let emp = employees.find(e => e.name === name);
   let isDollar = emp && emp.dollarRate > 0;
-
-  let rateDisplay = isDollar
-    ? `$${emp.dollarRate}/hr`
-    : `₱${emp.rate}/hr`;
+  let rateDisplay = isDollar ? `$${emp.dollarRate}/hr` : `₱${emp.rate}/hr`;
 
   let th = 0, tb = 0, tm = 0, tl = 0, ts = 0, td = 0;
   let tableRows = "";
 
-  rows.forEach(r => {
-    let timeInValue = r.timeIn || r.timein || r.inTime || "";
-    let timeOutValue = r.timeOut || r.timeout || r.outTime || "";
+  // Include every calendar date in the selected range, even without a shift.
+  const [sy, sm, sd] = fromDate.split("-").map(Number);
+  const [ey, em, ed] = toDate.split("-").map(Number);
+  const cursor = new Date(sy, sm - 1, sd);
+  const lastDate = new Date(ey, em - 1, ed);
 
-    th += +r.hours || 0;
-    tb += +(r.break || 0);
-    tm += +(r.mia || 0);
-    tl += +(r.late || 0);
-    ts += +(r.salary || 0);
-    td += +(r.dollar || 0);
+  while(cursor <= lastDate){
+    const dateKey = [
+      cursor.getFullYear(),
+      String(cursor.getMonth()+1).padStart(2,"0"),
+      String(cursor.getDate()).padStart(2,"0")
+    ].join("-");
+    const dayRows = rows.filter(r => r.date === dateKey);
 
-    tableRows += `
-      <tr>
-        <td>${r.date}</td>
-        <td>${formatTime(timeInValue)}</td>
-        <td>${formatTime(timeOutValue)}</td>
-        <td>${toHHMM(r.hours)}</td>
-        <td>${minutesToHHMM(r.late)}</td>
-        <td>${minutesToHHMM(r.break)}</td>
-        <td>${minutesToHHMM(r.mia)}</td>
-        <td>${isDollar ? '$' + (+r.dollar || 0).toFixed(2) : '₱' + (+r.salary || 0).toFixed(2)}</td>
-      </tr>`;
-  });
+    if(dayRows.length === 0){
+      tableRows += `
+        <tr>
+          <td>${dateKey}</td><td>-</td><td>-</td><td>0:00</td>
+          <td>0h 0m</td><td>0h 0m</td><td>0h 0m</td>
+          <td>${isDollar ? "$0.00" : "₱0.00"}</td>
+        </tr>`;
+    } else {
+      dayRows.forEach(r => {
+        const timeInValue = r.timeIn || r.timein || r.inTime || "";
+        const timeOutValue = r.timeOut || r.timeout || r.outTime || "";
+
+        th += +r.hours || 0;
+        tb += +(r.break || 0);
+        tm += +(r.mia || 0);
+        tl += +(r.late || 0);
+        ts += +(r.salary || 0);
+        td += +(r.dollar || 0);
+
+        tableRows += `
+          <tr>
+            <td>${r.date}</td>
+            <td>${formatTime(timeInValue)}</td>
+            <td>${formatTime(timeOutValue)}</td>
+            <td>${toHHMM(r.hours)}</td>
+            <td>${minutesToHHMM(r.late)}</td>
+            <td>${minutesToHHMM(r.break)}</td>
+            <td>${minutesToHHMM(r.mia)}</td>
+            <td>${isDollar ? '$' + (+r.dollar || 0).toFixed(2) : '₱' + (+r.salary || 0).toFixed(2)}</td>
+          </tr>`;
+      });
+    }
+    cursor.setDate(cursor.getDate()+1);
+  }
 
   const basePay = isDollar ? td : ts;
   const totalPay = basePay + incentive;
   const money = value => isDollar ? '$' + value.toFixed(2) : '₱' + value.toFixed(2);
 
-  let html = `
+  const html = `
     <div class="payslip-header">
       <h2>💼 Payslip</h2>
       <div>Outgrow Payroll System</div>
@@ -689,7 +789,7 @@ function showPayslip(name, cutoff){
           <strong>Employee:</strong> ${name}<br>
           <strong>Rate:</strong> ${rateDisplay}
         </div>
-        <div><strong>Cutoff:</strong> ${cutoff}</div>
+        <div><strong>Cutoff:</strong> ${fromDate} to ${toDate}</div>
       </div>
       <table class="payslip-table">
         <tr>
@@ -1036,7 +1136,7 @@ function render(){
         </td>
         <td><strong>${money(totalPay)}</strong></td>
         <td>
-          <button onclick='showPayslip(${nameArg},${cutoffArg})'>Payslip</button>
+          <button onclick='openPayslipRange(${nameArg},${cutoffArg})'>Payslip</button>
         </td>
       </tr>`;
   });

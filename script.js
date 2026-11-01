@@ -223,54 +223,7 @@ function clearSearch(){
 let employees = JSON.parse(localStorage.getItem("employees")) || [];
 let data = JSON.parse(localStorage.getItem("payrollData")) || [];
 let weeklyIncentives = JSON.parse(localStorage.getItem("weeklyIncentives")) || {};
-// DTR reference hours entered during reconciliation, saved locally by employee + cutoff.
-let dtrHours = JSON.parse(localStorage.getItem("dtrReconciliationHours")) || {};
 let editIndex = null;
-
-function reconciliationKey(name, cutoff){
-  return `${name}||${cutoff}`;
-}
-
-function parseDurationInput(value){
-  const raw = String(value || "").trim().toLowerCase();
-  if(!raw) return null;
-
-  // Accept HH:MM
-  let match = raw.match(/^(\\d+)\\s*:\\s*([0-5]?\\d)$/);
-  if(match) return (+match[1] * 60) + (+match[2]);
-
-  // Accept "40h 24m", "40h", or "24m"
-  match = raw.match(/^(?:(\\d+)\\s*h)?\\s*(?:(\\d+)\\s*m)?$/);
-  if(match && (match[1] !== undefined || match[2] !== undefined)){
-    return (+match[1] || 0) * 60 + (+match[2] || 0);
-  }
-  return NaN;
-}
-
-function formatSignedDuration(minutes){
-  const value = Math.round(minutes || 0);
-  const sign = value > 0 ? "+" : value < 0 ? "−" : "";
-  const abs = Math.abs(value);
-  return `${sign}${Math.floor(abs / 60)}h ${abs % 60}m`;
-}
-
-function saveDtrReconciliation(name, cutoff, value){
-  const key = reconciliationKey(name, cutoff);
-  const raw = String(value || "").trim();
-  if(!raw){
-    delete dtrHours[key];
-  }else{
-    const parsed = parseDurationInput(raw);
-    if(!Number.isFinite(parsed) || parsed < 0){
-      alert("Enter hours as HH:MM (example: 40:24) or 40h 24m.");
-      render();
-      return;
-    }
-    dtrHours[key] = raw;
-  }
-  localStorage.setItem("dtrReconciliationHours", JSON.stringify(dtrHours));
-  render();
-}
 
 function incentiveKey(name, cutoff){
   return `${name}||${cutoff}`;
@@ -1187,48 +1140,6 @@ function render(){
         </td>
       </tr>`;
   });
-
-  /* ================= DTR vs PAYROLL RECONCILIATION ================= */
-
-  const reconciliationBody = document.getElementById("reconciliationBody");
-  if(reconciliationBody){
-    reconciliationBody.innerHTML = "";
-    Object.values(weekly).forEach(w=>{
-      const key = reconciliationKey(w.name, w.cutoff);
-      const entered = dtrHours[key] || "";
-      const dtrMinutes = entered ? parseDurationInput(entered) : null;
-      const difference = dtrMinutes === null || !Number.isFinite(dtrMinutes)
-        ? null : Math.round(w.minutes - dtrMinutes);
-      let statusText = "ENTER DTR";
-      let statusClass = "recon-pending";
-      if(difference !== null){
-        statusText = Math.abs(difference) <= 1 ? "MATCH" : "CHECK";
-        statusClass = Math.abs(difference) <= 1 ? "recon-match" : "recon-check";
-      }
-      const nameArg = JSON.stringify(w.name).replace(/</g,"\\u003c");
-      const cutoffArg = JSON.stringify(w.cutoff);
-      const differenceText = difference === null ? "—" : formatSignedDuration(difference);
-      reconciliationBody.innerHTML += `
-        <tr>
-          <td>${w.name}</td>
-          <td>${w.cutoff}</td>
-          <td>
-            <input class="recon-input" type="text"
-              value="${String(entered).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;")}"
-              placeholder="e.g. 40:24"
-              aria-label="DTR hours for ${w.name}"
-              onchange='saveDtrReconciliation(${nameArg},${cutoffArg},this.value)'
-              onkeydown="if(event.key==='Enter'){this.blur();}">
-          </td>
-          <td>${formatDuration(w.minutes)}</td>
-          <td class="${difference !== null && Math.abs(difference) > 1 ? "recon-diff" : ""}">${differenceText}</td>
-          <td><span class="recon-status ${statusClass}">${statusText}</span></td>
-        </tr>`;
-    });
-    if(Object.keys(weekly).length === 0){
-      reconciliationBody.innerHTML = '<tr><td colspan="6" class="recon-empty">No payroll records to compare yet.</td></tr>';
-    }
-  }
 
   /* ================= MONTHLY TABLE ================= */
 

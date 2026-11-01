@@ -48,6 +48,22 @@
 </div>
 
 <div class="card">
+<h3>🔎 DTR vs Payroll Reconciliation</h3>
+<p class="recon-help">Enter the DTR total from your Google Sheets/photo for each employee and cutoff. System hours are pulled automatically from encoded payroll records.</p>
+<div class="table-wrapper">
+<table class="recon-table">
+<thead>
+<tr>
+<th>Employee</th><th>Cutoff</th><th>DTR Hours (from sheet)</th><th>System Hours</th><th>Difference</th><th>Status</th>
+</tr>
+</thead>
+<tbody id="reconciliationBody"></tbody>
+</table>
+</div>
+<p class="recon-note">Accepted formats: <strong>40:24</strong> or <strong>40h 24m</strong>. Difference is calculated as System Hours minus DTR Hours.</p>
+</div>
+
+<div class="card">
 <h3>📆 Monthly Report</h3>
 <table>
 <tr>

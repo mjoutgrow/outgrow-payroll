@@ -327,3 +327,37 @@ td:first-child{
     -moz-appearance: textfield;
     appearance: textfield;
 }
+
+/* ================= DTR RECONCILIATION ================= */
+.recon-help,.recon-note{
+  color:var(--muted);
+  font-size:13px;
+  line-height:1.5;
+  margin:-6px 0 14px;
+}
+.recon-note{margin:14px 0 0;}
+.recon-table{min-width:850px;}
+.recon-input{
+  min-width:125px;
+  max-width:150px;
+  margin:0;
+  padding:10px 12px;
+  font-variant-numeric:tabular-nums;
+}
+.recon-status{
+  display:inline-block;
+  padding:6px 10px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.3px;
+  white-space:nowrap;
+}
+.recon-match{background:#e7f7ec;color:#187a35;}
+.recon-check{background:#ffebe9;color:#c5221f;}
+.recon-pending{background:#fff4d6;color:#8a5a00;}
+.recon-diff{font-weight:700;color:#c5221f;}
+.recon-empty{text-align:center;color:var(--muted);padding:22px;}
+@media(max-width:768px){
+  .recon-input{min-width:115px;}
+}

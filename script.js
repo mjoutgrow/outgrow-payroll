@@ -1006,29 +1006,6 @@ function updateWeeklyIncentive(name, cutoff, value){
   render();
 }
 
-/* ================= RECORD FILTERS ================= */
-
-function clearRecordFilters(){
-  const employeeFilter = document.getElementById("recordEmployeeFilter");
-  const fromFilter = document.getElementById("recordDateFrom");
-  const toFilter = document.getElementById("recordDateTo");
-  if(employeeFilter) employeeFilter.value = "";
-  if(fromFilter) fromFilter.value = "";
-  if(toFilter) toFilter.value = "";
-  render();
-}
-
-function refreshRecordEmployeeFilter(){
-  const select = document.getElementById("recordEmployeeFilter");
-  if(!select) return;
-  const current = select.value;
-  const names = [...new Set(data.map(record => record.name).filter(Boolean))]
-    .sort((a,b)=>a.localeCompare(b));
-  select.innerHTML = '<option value="">All Employees</option>' +
-    names.map(name => `<option value="${String(name).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;")}">${String(name).replace(/&/g,"&amp;").replace(/</g,"&lt;")}</option>`).join("");
-  if(names.includes(current)) select.value = current;
-}
-
 /* ================= RENDER ================= */
 
 function render(){
@@ -1043,31 +1020,13 @@ function render(){
 
   /* ================= RECORDS TABLE ================= */
 
-  refreshRecordEmployeeFilter();
-  const employeeFilter = document.getElementById("recordEmployeeFilter")?.value || "";
-  const dateFrom = document.getElementById("recordDateFrom")?.value || "";
-  const dateTo = document.getElementById("recordDateTo")?.value || "";
-
-  const filteredRecordRows = data
-    .map((item,index)=>({ item,index }))
-    .filter(row=>{
-      const recordDate = String(row.item.date || "").slice(0,10);
-      if(search && !row.item.name.toLowerCase().includes(search)) return false;
-      if(employeeFilter && row.item.name !== employeeFilter) return false;
-      if(dateFrom && recordDate < dateFrom) return false;
-      if(dateTo && recordDate > dateTo) return false;
-      return true;
-    })
-    .sort((a,b)=>String(b.item.date).localeCompare(String(a.item.date)));
-
-  const filteredMinutes = filteredRecordRows.reduce((sum,row)=>sum+(Number(row.item.minutes)||0),0);
-  const filterSummary = document.getElementById("recordFilterSummary");
-  if(filterSummary){
-    filterSummary.textContent = `${filteredRecordRows.length} record(s) • ${formatDuration(filteredMinutes)} total hours`;
-  }
-
-  // Show every record matching the selected employee/date filters.
-  filteredRecordRows
+  data
+  .map((item,index)=>({ item,index }))
+  .filter(row=>{
+    if(search && !row.item.name.toLowerCase().includes(search)) return false;
+    return true;
+  })
+  .slice(0,7)
   .forEach(row=>{
 
     let d = row.item;
@@ -1098,12 +1057,6 @@ function render(){
   data.forEach(d=>{
 
     if(search && !d.name.toLowerCase().includes(search)) return;
-
-    // Keep Weekly Summary in sync with the Records employee/date filters.
-    const recordDate = String(d.date || "").slice(0,10);
-    if(employeeFilter && d.name !== employeeFilter) return;
-    if(dateFrom && recordDate < dateFrom) return;
-    if(dateTo && recordDate > dateTo) return;
 
     let wk = d.name + getCutoff(d.date);
 

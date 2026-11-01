@@ -1066,8 +1066,8 @@ function render(){
     filterSummary.textContent = `${filteredRecordRows.length} record(s) • ${formatDuration(filteredMinutes)} total hours`;
   }
 
+  // Show every record matching the selected employee/date filters.
   filteredRecordRows
-  .slice(0,7)
   .forEach(row=>{
 
     let d = row.item;
@@ -1098,6 +1098,12 @@ function render(){
   data.forEach(d=>{
 
     if(search && !d.name.toLowerCase().includes(search)) return;
+
+    // Keep Weekly Summary in sync with the Records employee/date filters.
+    const recordDate = String(d.date || "").slice(0,10);
+    if(employeeFilter && d.name !== employeeFilter) return;
+    if(dateFrom && recordDate < dateFrom) return;
+    if(dateTo && recordDate > dateTo) return;
 
     let wk = d.name + getCutoff(d.date);
 

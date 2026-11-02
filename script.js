@@ -245,16 +245,40 @@ const saveAll = () => {
   localStorage.setItem("weeklyIncentives", JSON.stringify(weeklyIncentives));
 };
 
-const toEST = (d,t="00:00") => new Date(d + " " + t);
+/* ================= TIME CALCULATION ================= */
 
-/* ================= NEW TIME SYSTEM ================= */
-
+// Calculate scheduled clock-time minutes, not elapsed timestamp minutes.
+// This avoids daylight-saving-time changes adding or removing an hour.
+// Supports overnight shifts (for example, 22:00 to 04:00 = 360 minutes).
+// The fourth argument is break duration in HOURS, matching existing calls.
 function calcMinutes(date, t1, t2, b=0){
-  let s = toEST(date, t1);
-  let e = toEST(date, t2);
-  if(e < s) e.setDate(e.getDate()+1);
-  let totalMinutes = (e - s) / 60000;
-  return totalMinutes - (b * 60);
+  const parseClockTime = (value) => {
+    if (typeof value !== "string" || !/^\d{1,2}:\d{2}$/.test(value)) {
+      return NaN;
+    }
+
+    const [hours, minutes] = value.split(":").map(Number);
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      return NaN;
+    }
+
+    return hours * 60 + minutes;
+  };
+
+  const startMinutes = parseClockTime(t1);
+  let endMinutes = parseClockTime(t2);
+
+  if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) {
+    return NaN;
+  }
+
+  // If the end time is earlier than the start time, the shift ends next day.
+  if (endMinutes < startMinutes) {
+    endMinutes += 24 * 60;
+  }
+
+  const breakMinutes = Math.max(0, Number(b) || 0) * 60;
+  return Math.max(0, endMinutes - startMinutes - breakMinutes);
 }
 
 function calcHours(date,t1,t2,b=0){

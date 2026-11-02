@@ -782,7 +782,7 @@ function showPayslip(name, fromDate, toDate){
     } else {
       dayRows.forEach(r => {
         const timeInValue = r.timeIn || r.timein || r.inTime || "";
-        const timeOutValue = r.timeOut || r.timeout || r.outTime || "";
+        const timeOutValue = getPayslipTimeOut(r);
 
         th += +r.hours || 0;
         tb += +(r.break || 0);
@@ -869,6 +869,51 @@ function formatTime(t){
   if(h === 0) h = 12;
 
   return `${h}:${m} ${ampm}`;
+}
+
+/*
+ * Older/imported attendance records can have a valid Time In and net hours
+ * but an empty Time Out. Reconstruct the display value without changing the
+ * saved record:
+ *
+ * gross shift duration = net worked minutes + late + break + MIA.
+ *
+ * Existing Time Out values always take priority. This is a display fallback
+ * for the payslip only; it does not modify payroll calculations or stored data.
+ */
+function getPayslipTimeOut(record){
+  const savedTimeOut =
+    record.timeOut || record.timeout || record.outTime || "";
+
+  if(savedTimeOut){
+    const normalized = normalizeTimeInput(savedTimeOut);
+    if(normalized) return normalized;
+  }
+
+  const timeInValue =
+    record.timeIn || record.timein || record.inTime || "";
+  const normalizedTimeIn = normalizeTimeInput(timeInValue);
+  if(!normalizedTimeIn) return "";
+
+  const [hours, minutes] = normalizedTimeIn.split(":").map(Number);
+  const startMinutes = hours * 60 + minutes;
+
+  const netMinutes = Number.isFinite(+record.minutes)
+    ? Math.max(0, Math.round(+record.minutes))
+    : Math.max(0, Math.round((+record.hours || 0) * 60));
+
+  const lateMinutes = Math.max(0, Math.round(+record.late || 0));
+  const breakMinutes = Math.max(0, Math.round(+record.break || 0));
+  const miaMinutes = Math.max(0, Math.round(+record.mia || 0));
+
+  const reconstructedMinutes =
+    (startMinutes + netMinutes + lateMinutes + breakMinutes + miaMinutes) %
+    (24 * 60);
+
+  const outHours = Math.floor(reconstructedMinutes / 60);
+  const outMinutes = reconstructedMinutes % 60;
+
+  return `${String(outHours).padStart(2,"0")}:${String(outMinutes).padStart(2,"0")}`;
 }
 
 function toHHMM(val){

@@ -944,7 +944,10 @@ function buildWeeklyExportRows(cutoff){
 function weeklyCsv(cutoff){
   const rows = buildWeeklyExportRows(cutoff);
   if(!rows.length) return "";
-  let csv = "Employee,Cutoff,Hours,Peso Pay,Dollar Pay,Incentive,Total Pay\\n";
+
+  // Use real CSV row breaks so spreadsheet apps read each employee as a row.
+  let csv = "Employee,Cutoff,Hours,Peso Pay,Dollar Pay,Incentive,Total Pay\n";
+
   rows.forEach(g=>{
     const emp = employees.find(e => e.name === g.name);
     const hours = g.minutes / 60;
@@ -952,32 +955,77 @@ function weeklyCsv(cutoff){
     const pesoPay = emp && +emp.rate > 0 ? (hours * +emp.rate).toFixed(2) : "";
     const dollarPay = emp && +emp.dollarRate > 0 ? (hours * +emp.dollarRate).toFixed(2) : "";
     const incentive = getWeeklyIncentive(g.name, cutoff);
-    const basePay = emp && +emp.dollarRate > 0 ? +dollarPay || 0 : +pesoPay || 0;
+    const basePay = emp && +emp.dollarRate > 0 ? (+dollarPay || 0) : (+pesoPay || 0);
     const totalPay = (basePay + incentive).toFixed(2);
-    csv += [g.name,g.cutoff,hoursFormatted,pesoPay,dollarPay,incentive.toFixed(2),totalPay].map(csvEscape).join(",") + "\\n";
+
+    csv += [
+      g.name,
+      g.cutoff,
+      hoursFormatted,
+      pesoPay,
+      dollarPay,
+      incentive.toFixed(2),
+      totalPay
+    ].map(csvEscape).join(",") + "\n";
   });
+
   return csv;
 }
 
 function exportCSV(){
-  if(!cutoffLabel()){ alert("Please set a cutoff date first."); return; }
+  if(!cutoffLabel()){
+    alert("Please set a cutoff date first.");
+    return;
+  }
+
   const currentCutoff = cutoffLabel();
   const csv = weeklyCsv(currentCutoff);
-  if(!csv){ alert("No records found within the selected cutoff."); return; }
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(new Blob(["\\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
-  a.download=formatCutoffFilename(currentCutoff);
+
+  if(!csv){
+    alert("No records found within the selected cutoff.");
+    return;
+  }
+
+  const blob = new Blob(["\uFEFF", csv], {
+    type:"text/csv;charset=utf-8;"
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+
+  a.href = url;
+  a.download = formatCutoffFilename(currentCutoff);
+  document.body.appendChild(a);
   a.click();
+  a.remove();
+
+  // Release the temporary object URL after the browser has started the download.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function formatCutoffFilename(cutoff){
-  let parts=cutoff.split(" to ");
-  if(parts.length!==2) return "weekly_cutoff.csv";
-  let start=new Date(parts[0]), end=new Date(parts[1]);
-  return `${start.toLocaleString("en-US",{month:"long"})}_${start.getDate()}-${end.getDate()}_cutoff.csv`;
+  const parts = String(cutoff || "").split(" to ");
+  if(parts.length !== 2) return "weekly_cutoff.csv";
+
+  // Parse YYYY-MM-DD as local calendar dates; avoid UTC/local timezone shifting.
+  const parseLocalDate = value => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if(!match) return null;
+    return {
+      year: Number(match[1]),
+      month: Number(match[2]),
+      day: Number(match[3])
+    };
+  };
+
+  const start = parseLocalDate(parts[0]);
+  const end = parseLocalDate(parts[1]);
+  if(!start || !end) return "weekly_cutoff.csv";
+
+  const monthName = new Date(start.year, start.month - 1, 1)
+    .toLocaleString("en-US", {month:"long"});
+
+  return `${monthName}_${start.day}-${end.day}_cutoff.csv`;
 }
-
-
 
 /* ================= ATTENDANCE PDF IMPORT ================= */
 

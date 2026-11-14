@@ -1016,7 +1016,7 @@ function importAttendancePDF(event){
         const dayStep = 52.8;
         const firstDayBase = 76.4;
         const fieldRanges = {
-          timeIn:[3.0,11.5],
+          timeIn:[1.5,13.5],
           timeOut:[15.0,24.5],
           late:[26.0,32.0],
           break:[32.5,39.5],

@@ -970,6 +970,8 @@ function importAttendancePDF(event){
       const pdf = await pdfjsLib.getDocument({data:new Uint8Array(reader.result)}).promise;
       const extracted = [];
       let pageDates = [];
+      const employeeCounts = {};
+      const employeeNamesInPdf = new Set();
 
       for(let pageNo = 1; pageNo <= pdf.numPages; pageNo++){
         const page = await pdf.getPage(pageNo);
@@ -984,9 +986,8 @@ function importAttendancePDF(event){
             width:item.width || 0
           }));
 
-        // This importer targets the team-summary DTR table: date headers sit
-        // in the upper header band, followed by one employee row per line.
-        const headerItems = items.filter(item => item.y >= 54 && item.y <= 59 && item.x > 75)
+        // Read all date headings in the PDF's daily attendance header.
+        const headerItems = items.filter(item => item.y >= 54 && item.y <= 60 && item.x > 75)
           .sort((a,b)=>a.x-b.x);
         const headerText = headerItems.map(item=>item.text).join(" ");
         const dateMatches = [...headerText.matchAll(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s+(\d{4})/gi)];
@@ -999,46 +1000,72 @@ function importAttendancePDF(event){
           throw new Error("Could not read the daily date headings. Please use the team-summary DTR PDF format.");
         }
 
-        // Employee names occupy the left-most column. Each employee's
-        // attendance values are printed on the immediately following line.
+        // Employee names are on the left; combine all text fragments on each name line.
         const nameItems = items.filter(item => item.x < 66 && item.y >= 60 && item.y < viewport.height - 30)
           .sort((a,b)=>a.y-b.y || a.x-b.x);
-
         const nameRows = [];
         nameItems.forEach(item=>{
-          const existing = nameRows.find(row => Math.abs(row.y-item.y) < 0.45);
+          const existing = nameRows.find(row => Math.abs(row.y-item.y) < 0.55);
           if(existing) existing.parts.push(item);
           else nameRows.push({y:item.y,parts:[item]});
         });
 
-        const dateCount = Math.min(dates.length,17);
-        const dayStep = 38.2;
-        const firstDayBase = 66.5;
-        for(const nameRow of nameRows){
-          const employeeName = nameRow.parts.sort((a,b)=>a.x-b.x).map(p=>p.text).join(" ").replace(/\s+/g," ").trim();
-          if(!employeeName || /^(AGENT|CUT OFF|WEEKLY TOTAL)$/i.test(employeeName)) continue;
+        // This DTR uses 12 daily groups across a 792-point landscape page.
+        // Each day is 52.8 points wide. The previous importer used 38.2 points,
+        // which shifted the fields and caused most employees/days to be missed.
+        const dayStep = 52.8;
+        const firstDayBase = 76.4;
+        const fieldRanges = {
+          timeIn:[3.0,11.5],
+          timeOut:[15.0,24.5],
+          late:[26.0,32.0],
+          break:[32.5,39.5],
+          idle:[40.0,45.5],
+          total:[46.0,52.0]
+        };
+        const dateCount = dates.length;
 
-          const valueY = nameRow.y + 0.29;
-          const rowItems = items.filter(item => item.x >= firstDayBase+3 && item.x < 744 && Math.abs(item.y-valueY) < 0.5);
+        for(const nameRow of nameRows){
+          const employeeName = nameRow.parts.sort((a,b)=>a.x-b.x)
+            .map(p=>p.text).join(" ").replace(/\s+/g," ").trim();
+          if(!employeeName || /^(AGENT|CUT OFF|WEEKLY TOTAL)$/i.test(employeeName) || /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}[-–]\d{1,2},?\s+\d{4}$/i.test(employeeName)) continue;
+
+          employeeNamesInPdf.add(employeeName);
+          // Name and attendance text share the same printed row. A 1-point
+          // tolerance accommodates small PDF text-baseline differences.
+          const rowItems = items.filter(item => item.x >= 75 && item.x < 744 && Math.abs(item.y-nameRow.y) < 1.0);
           if(!rowItems.length) continue;
+
+          const readField = (base, field) => {
+            const [from,to] = fieldRanges[field];
+            return rowItems
+              .filter(item => item.x >= base+from && item.x < base+to)
+              .sort((a,b)=>a.x-b.x)
+              .map(item=>item.text)
+              .join(" ")
+              .replace(/\s+/g," ")
+              .trim();
+          };
 
           for(let day=0; day<dateCount; day++){
             const baseX = firstDayBase + day*dayStep;
-            const inText = rowItems.filter(item=>item.x >= baseX+3.5 && item.x < baseX+13.0).sort((a,b)=>a.x-b.x).map(i=>i.text).join(" ");
-            const outText = rowItems.filter(item=>item.x >= baseX+13.5 && item.x < baseX+22.5).sort((a,b)=>a.x-b.x).map(i=>i.text).join(" ");
-            const lateText = rowItems.filter(item=>item.x >= baseX+22.0 && item.x < baseX+27.5).sort((a,b)=>a.x-b.x).map(i=>i.text).join("");
-            const breakText = rowItems.filter(item=>item.x >= baseX+27.5 && item.x < baseX+32.8).sort((a,b)=>a.x-b.x).map(i=>i.text).join("");
-            const idleText = rowItems.filter(item=>item.x >= baseX+32.8 && item.x < baseX+36.8).sort((a,b)=>a.x-b.x).map(i=>i.text).join("");
-            const totalText = rowItems.filter(item=>item.x >= baseX+36.8 && item.x < baseX+40.0).sort((a,b)=>a.x-b.x).map(i=>i.text).join("");
-
+            const totalText = readField(baseX,"total");
             const totalMinutes = pdfDurationToMinutes(totalText);
             if(totalMinutes === null || totalMinutes <= 0) continue;
 
-            const timeIn = pdfClockTo24(inText);
-            const timeOut = pdfClockTo24(outText);
-            const lateMinutes = pdfDurationToMinutes(lateText) || 0;
-            const breakMinutes = pdfDurationToMinutes(breakText) || 0;
-            const idleMinutes = pdfDurationToMinutes(idleText) || 0;
+            const timeIn = pdfClockTo24(readField(baseX,"timeIn"));
+            const timeOut = pdfClockTo24(readField(baseX,"timeOut"));
+            // A positive total without both clock times is not safe to import.
+            // Count it as a parse warning instead of creating a misleading row.
+            if(!timeIn || !timeOut){
+              employeeCounts[employeeName] = employeeCounts[employeeName] || {records:0, warnings:0};
+              employeeCounts[employeeName].warnings++;
+              continue;
+            }
+
+            const lateMinutes = pdfDurationToMinutes(readField(baseX,"late")) || 0;
+            const breakMinutes = pdfDurationToMinutes(readField(baseX,"break")) || 0;
+            const idleMinutes = pdfDurationToMinutes(readField(baseX,"idle")) || 0;
 
             extracted.push({
               name:employeeName,
@@ -1053,13 +1080,15 @@ function importAttendancePDF(event){
               timeIn,
               timeOut
             });
+            employeeCounts[employeeName] = employeeCounts[employeeName] || {records:0,warnings:0};
+            employeeCounts[employeeName].records++;
           }
         }
         pageDates = dates;
       }
 
       if(!extracted.length){
-        throw new Error("No attendance entries were detected. The PDF may have a different layout or be image-only.");
+        throw new Error("No complete attendance entries were detected. The PDF may have a different layout or be image-only.");
       }
 
       const matched = [];
@@ -1084,11 +1113,16 @@ function importAttendancePDF(event){
 
       const dateRange = pageDates.length
         ? `${pageDates[0]} to ${pageDates[pageDates.length-1]}` : "dates found in PDF";
+      const countLines = Object.entries(employeeCounts)
+        .map(([name,count])=>`${name}: ${count.records} day(s)${count.warnings ? `, ${count.warnings} incomplete` : ""}`);
       const preview = `PDF attendance detected.\nDate columns: ${dateRange}\n` +
+        `Employees detected: ${employeeNamesInPdf.size}\n` +
+        `Complete attendance entries: ${extracted.length}\n` +
         `New records ready: ${unique.length}\nDuplicate employee/date entries skipped: ${duplicates.length}\n` +
-        `Employees not found in payroll list: ${unknown.size}\n\n` +
-        (unknown.size ? `Unmatched names:\n${[...unknown].slice(0,10).join("\n")}\n\n` : "") +
-        `Import the matched records now?`;
+        `Employees not found in payroll list: ${unknown.size}\n` +
+        (countLines.length ? `\nRecords per employee:\n${countLines.join("\n")}\n` : "") +
+        (unknown.size ? `\nUnmatched names:\n${[...unknown].slice(0,10).join("\n")}\n` : "") +
+        `\nImport the matched records now?`;
 
       if(!unique.length){
         alert(preview + "\n\nNo new matched records to import.");

@@ -899,7 +899,7 @@ function buildWeeklyExportRows(cutoff){
 function weeklyCsv(cutoff){
   const rows = buildWeeklyExportRows(cutoff);
   if(!rows.length) return "";
-  let csv = "Employee,Cutoff,Hours,Peso Pay,Dollar Pay,Incentive,Total Pay\\n";
+  let csv = "Employee,Cutoff,Hours,Peso Pay,Dollar Pay,Incentive,Total Pay\n";
   rows.forEach(g=>{
     const emp = employees.find(e => e.name === g.name);
     const hours = g.minutes / 60;
@@ -909,7 +909,7 @@ function weeklyCsv(cutoff){
     const incentive = getWeeklyIncentive(g.name, cutoff);
     const basePay = emp && +emp.dollarRate > 0 ? +dollarPay || 0 : +pesoPay || 0;
     const totalPay = (basePay + incentive).toFixed(2);
-    csv += [g.name,g.cutoff,hoursFormatted,pesoPay,dollarPay,incentive.toFixed(2),totalPay].map(csvEscape).join(",") + "\\n";
+    csv += [g.name,g.cutoff,hoursFormatted,pesoPay,dollarPay,incentive.toFixed(2),totalPay].map(csvEscape).join(",") + "\n";
   });
   return csv;
 }
@@ -920,7 +920,7 @@ function exportCSV(){
   const csv = weeklyCsv(currentCutoff);
   if(!csv){ alert("No records found within the selected cutoff."); return; }
   const a=document.createElement("a");
-  a.href=URL.createObjectURL(new Blob(["\\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
+  a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
   a.download=formatCutoffFilename(currentCutoff);
   a.click();
 }
@@ -1151,7 +1151,7 @@ function importAttendancePDF(event){
 
 function csvEscape(value){
   const s=String(value ?? "");
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
 }
 
 function exportMonthlyCSV(){

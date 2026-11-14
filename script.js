@@ -782,7 +782,7 @@ function showPayslip(name, fromDate, toDate){
     } else {
       dayRows.forEach(r => {
         const timeInValue = r.timeIn || r.timein || r.inTime || "";
-        const timeOutValue = getPayslipTimeOut(r);
+        const timeOutValue = r.timeOut || r.timeout || r.outTime || "";
 
         th += +r.hours || 0;
         tb += +(r.break || 0);
@@ -871,51 +871,6 @@ function formatTime(t){
   return `${h}:${m} ${ampm}`;
 }
 
-/*
- * Older/imported attendance records can have a valid Time In and net hours
- * but an empty Time Out. Reconstruct the display value without changing the
- * saved record:
- *
- * gross shift duration = net worked minutes + late + break + MIA.
- *
- * Existing Time Out values always take priority. This is a display fallback
- * for the payslip only; it does not modify payroll calculations or stored data.
- */
-function getPayslipTimeOut(record){
-  const savedTimeOut =
-    record.timeOut || record.timeout || record.outTime || "";
-
-  if(savedTimeOut){
-    const normalized = normalizeTimeInput(savedTimeOut);
-    if(normalized) return normalized;
-  }
-
-  const timeInValue =
-    record.timeIn || record.timein || record.inTime || "";
-  const normalizedTimeIn = normalizeTimeInput(timeInValue);
-  if(!normalizedTimeIn) return "";
-
-  const [hours, minutes] = normalizedTimeIn.split(":").map(Number);
-  const startMinutes = hours * 60 + minutes;
-
-  const netMinutes = Number.isFinite(+record.minutes)
-    ? Math.max(0, Math.round(+record.minutes))
-    : Math.max(0, Math.round((+record.hours || 0) * 60));
-
-  const lateMinutes = Math.max(0, Math.round(+record.late || 0));
-  const breakMinutes = Math.max(0, Math.round(+record.break || 0));
-  const miaMinutes = Math.max(0, Math.round(+record.mia || 0));
-
-  const reconstructedMinutes =
-    (startMinutes + netMinutes + lateMinutes + breakMinutes + miaMinutes) %
-    (24 * 60);
-
-  const outHours = Math.floor(reconstructedMinutes / 60);
-  const outMinutes = reconstructedMinutes % 60;
-
-  return `${String(outHours).padStart(2,"0")}:${String(outMinutes).padStart(2,"0")}`;
-}
-
 function toHHMM(val){
   let h = Math.floor(val);
   let m = Math.round((val - h) * 60);
@@ -944,10 +899,7 @@ function buildWeeklyExportRows(cutoff){
 function weeklyCsv(cutoff){
   const rows = buildWeeklyExportRows(cutoff);
   if(!rows.length) return "";
-
-  // Use real CSV row breaks so spreadsheet apps read each employee as a row.
-  let csv = "Employee,Cutoff,Hours,Peso Pay,Dollar Pay,Incentive,Total Pay\n";
-
+  let csv = "Employee,Cutoff,Hours,Peso Pay,Dollar Pay,Incentive,Total Pay\\n";
   rows.forEach(g=>{
     const emp = employees.find(e => e.name === g.name);
     const hours = g.minutes / 60;
@@ -955,77 +907,32 @@ function weeklyCsv(cutoff){
     const pesoPay = emp && +emp.rate > 0 ? (hours * +emp.rate).toFixed(2) : "";
     const dollarPay = emp && +emp.dollarRate > 0 ? (hours * +emp.dollarRate).toFixed(2) : "";
     const incentive = getWeeklyIncentive(g.name, cutoff);
-    const basePay = emp && +emp.dollarRate > 0 ? (+dollarPay || 0) : (+pesoPay || 0);
+    const basePay = emp && +emp.dollarRate > 0 ? +dollarPay || 0 : +pesoPay || 0;
     const totalPay = (basePay + incentive).toFixed(2);
-
-    csv += [
-      g.name,
-      g.cutoff,
-      hoursFormatted,
-      pesoPay,
-      dollarPay,
-      incentive.toFixed(2),
-      totalPay
-    ].map(csvEscape).join(",") + "\n";
+    csv += [g.name,g.cutoff,hoursFormatted,pesoPay,dollarPay,incentive.toFixed(2),totalPay].map(csvEscape).join(",") + "\\n";
   });
-
   return csv;
 }
 
 function exportCSV(){
-  if(!cutoffLabel()){
-    alert("Please set a cutoff date first.");
-    return;
-  }
-
+  if(!cutoffLabel()){ alert("Please set a cutoff date first."); return; }
   const currentCutoff = cutoffLabel();
   const csv = weeklyCsv(currentCutoff);
-
-  if(!csv){
-    alert("No records found within the selected cutoff.");
-    return;
-  }
-
-  const blob = new Blob(["\uFEFF", csv], {
-    type:"text/csv;charset=utf-8;"
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-
-  a.href = url;
-  a.download = formatCutoffFilename(currentCutoff);
-  document.body.appendChild(a);
+  if(!csv){ alert("No records found within the selected cutoff."); return; }
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob(["\\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
+  a.download=formatCutoffFilename(currentCutoff);
   a.click();
-  a.remove();
-
-  // Release the temporary object URL after the browser has started the download.
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function formatCutoffFilename(cutoff){
-  const parts = String(cutoff || "").split(" to ");
-  if(parts.length !== 2) return "weekly_cutoff.csv";
-
-  // Parse YYYY-MM-DD as local calendar dates; avoid UTC/local timezone shifting.
-  const parseLocalDate = value => {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-    if(!match) return null;
-    return {
-      year: Number(match[1]),
-      month: Number(match[2]),
-      day: Number(match[3])
-    };
-  };
-
-  const start = parseLocalDate(parts[0]);
-  const end = parseLocalDate(parts[1]);
-  if(!start || !end) return "weekly_cutoff.csv";
-
-  const monthName = new Date(start.year, start.month - 1, 1)
-    .toLocaleString("en-US", {month:"long"});
-
-  return `${monthName}_${start.day}-${end.day}_cutoff.csv`;
+  let parts=cutoff.split(" to ");
+  if(parts.length!==2) return "weekly_cutoff.csv";
+  let start=new Date(parts[0]), end=new Date(parts[1]);
+  return `${start.toLocaleString("en-US",{month:"long"})}_${start.getDate()}-${end.getDate()}_cutoff.csv`;
 }
+
+
 
 /* ================= ATTENDANCE PDF IMPORT ================= */
 

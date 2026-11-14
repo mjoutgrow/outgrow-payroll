@@ -926,10 +926,31 @@ function exportCSV(){
 }
 
 function formatCutoffFilename(cutoff){
-  let parts=cutoff.split(" to ");
-  if(parts.length!==2) return "weekly_cutoff.csv";
-  let start=new Date(parts[0]), end=new Date(parts[1]);
-  return `${start.toLocaleString("en-US",{month:"long"})}_${start.getDate()}-${end.getDate()}_cutoff.csv`;
+  const parts = String(cutoff || "").split(" to ");
+  if(parts.length !== 2) return "weekly_cutoff.csv";
+
+  // Parse YYYY-MM-DD as calendar values, not Date("YYYY-MM-DD").
+  // Date-only ISO strings are treated as UTC and can shift one day
+  // backward on computers in time zones west of UTC.
+  const startMatch = parts[0].trim().match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  const endMatch = parts[1].trim().match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  if(!startMatch || !endMatch) return "weekly_cutoff.csv";
+
+  const year = Number(startMatch[1]);
+  const month = Number(startMatch[2]);
+  const startDay = Number(startMatch[3]);
+  const endDay = Number(endMatch[3]);
+
+  if(month < 1 || month > 12 || startDay < 1 || startDay > 31 || endDay < 1 || endDay > 31){
+    return "weekly_cutoff.csv";
+  }
+
+  const monthName = [
+    "January","February","March","April","May","June",
+    "July","August","September","October","November","December"
+  ][month - 1];
+
+  return `${monthName}_${startDay}-${endDay}_cutoff.csv`;
 }
 
 
